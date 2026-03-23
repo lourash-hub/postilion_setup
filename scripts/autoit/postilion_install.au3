@@ -112,20 +112,147 @@ Func _HandlePopup($title, $buttonText, $waitTime = 0)
 EndFunc
 
 ; =============================================================================
-; Click Next button
+; Click Next button — robust multi-strategy approach
 ; =============================================================================
 Func _ClickNext()
     _Log("Clicking Next >")
+
+    ; Strategy 1: Exact text match
     Local $result = ControlClick($mainWindow, "", "[TEXT:Next >]")
-    If $result = 0 Then
-        _Log("WARNING: ControlClick on [TEXT:Next >] failed, trying by class")
-        $result = ControlClick($mainWindow, "", "[CLASS:Button; TEXT:Next >]")
+    If $result = 1 Then
+        _Log("Next clicked via [TEXT:Next >]")
+        Sleep($screenWait)
+        Return
     EndIf
-    If $result = 0 Then
-        _Log("ERROR: Cannot click Next button")
-        Exit $EXIT_CONTROL_NOT_FOUND
+
+    ; Strategy 2: With & accelerator key
+    $result = ControlClick($mainWindow, "", "[TEXT:&Next >]")
+    If $result = 1 Then
+        _Log("Next clicked via [TEXT:&Next >]")
+        Sleep($screenWait)
+        Return
     EndIf
+
+    ; Strategy 3: Class + text
+    $result = ControlClick($mainWindow, "", "[CLASS:Button; TEXT:Next >]")
+    If $result = 1 Then
+        _Log("Next clicked via [CLASS:Button; TEXT:Next >]")
+        Sleep($screenWait)
+        Return
+    EndIf
+
+    ; Strategy 4: Class + text with accelerator
+    $result = ControlClick($mainWindow, "", "[CLASS:Button; TEXT:&Next >]")
+    If $result = 1 Then
+        _Log("Next clicked via [CLASS:Button; TEXT:&Next >]")
+        Sleep($screenWait)
+        Return
+    EndIf
+
+    ; Strategy 5: Scan all Button instances for one containing "Next"
+    For $i = 1 To 10
+        Local $btnText = ControlGetText($mainWindow, "", "[CLASS:Button; INSTANCE:" & $i & "]")
+        If @error Then ExitLoop
+        _Log("  Button INSTANCE:" & $i & " text='" & $btnText & "'")
+        If StringInStr($btnText, "Next") Then
+            $result = ControlClick($mainWindow, "", "[CLASS:Button; INSTANCE:" & $i & "]")
+            If $result = 1 Then
+                _Log("Next clicked via [CLASS:Button; INSTANCE:" & $i & "]")
+                Sleep($screenWait)
+                Return
+            EndIf
+        EndIf
+    Next
+
+    ; Strategy 6: Try keyboard shortcut Alt+N (common accelerator)
+    _Log("WARNING: All ControlClick strategies failed, trying keyboard Alt+N")
+    Send("!n")
     Sleep($screenWait)
+
+    ; Strategy 7: Last resort — press Enter (Next is often the default/focused button)
+    _Log("WARNING: Trying Enter key as last resort")
+    Send("{ENTER}")
+    Sleep($screenWait)
+
+    _Log("WARNING: Next button click used keyboard fallback — verify screen advanced")
+EndFunc
+
+; =============================================================================
+; Click a named button — robust multi-strategy approach
+; =============================================================================
+Func _ClickButton($buttonText)
+    _Log("Clicking button: " & $buttonText)
+
+    ; Strategy 1: Exact text
+    Local $result = ControlClick($mainWindow, "", "[TEXT:" & $buttonText & "]")
+    If $result = 1 Then
+        Sleep($screenWait)
+        Return True
+    EndIf
+
+    ; Strategy 2: With & accelerator (try & before first char)
+    $result = ControlClick($mainWindow, "", "[TEXT:&" & $buttonText & "]")
+    If $result = 1 Then
+        Sleep($screenWait)
+        Return True
+    EndIf
+
+    ; Strategy 3: Class + text
+    $result = ControlClick($mainWindow, "", "[CLASS:Button; TEXT:" & $buttonText & "]")
+    If $result = 1 Then
+        Sleep($screenWait)
+        Return True
+    EndIf
+
+    ; Strategy 4: Scan all buttons
+    For $i = 1 To 10
+        Local $btnText = ControlGetText($mainWindow, "", "[CLASS:Button; INSTANCE:" & $i & "]")
+        If @error Then ExitLoop
+        If StringInStr($btnText, $buttonText) Then
+            $result = ControlClick($mainWindow, "", "[CLASS:Button; INSTANCE:" & $i & "]")
+            If $result = 1 Then
+                _Log("Button '" & $buttonText & "' clicked via INSTANCE:" & $i)
+                Sleep($screenWait)
+                Return True
+            EndIf
+        EndIf
+    Next
+
+    _Log("WARNING: Could not click button: " & $buttonText)
+    Return False
+EndFunc
+
+; =============================================================================
+; Dump all visible controls in the window (diagnostic)
+; =============================================================================
+Func _DumpControls()
+    _Log("--- Control dump for window: " & $mainWindow & " ---")
+    ; Dump Button controls
+    For $i = 1 To 15
+        Local $text = ControlGetText($mainWindow, "", "[CLASS:Button; INSTANCE:" & $i & "]")
+        If @error Then ExitLoop
+        Local $handle = ControlGetHandle($mainWindow, "", "[CLASS:Button; INSTANCE:" & $i & "]")
+        _Log("  Button INSTANCE:" & $i & " text='" & $text & "' handle=" & $handle)
+    Next
+    ; Dump Edit controls
+    For $i = 1 To 10
+        Local $text2 = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $i & "]")
+        If @error Then ExitLoop
+        _Log("  Edit INSTANCE:" & $i & " text='" & $text2 & "'")
+    Next
+    ; Dump ComboBox controls
+    For $i = 1 To 5
+        Local $text3 = ControlGetText($mainWindow, "", "[CLASS:ComboBox; INSTANCE:" & $i & "]")
+        If @error Then ExitLoop
+        _Log("  ComboBox INSTANCE:" & $i & " text='" & $text3 & "'")
+    Next
+    ; Dump Static/Label controls
+    For $i = 1 To 10
+        Local $text4 = ControlGetText($mainWindow, "", "[CLASS:Static; INSTANCE:" & $i & "]")
+        If @error Then ExitLoop
+        _Log("  Static INSTANCE:" & $i & " text='" & StringLeft($text4, 80) & "'")
+    Next
+    _Log("--- End control dump ---")
 EndFunc
 
 ; =============================================================================
@@ -147,6 +274,8 @@ AutoItSetOption("WinWaitDelay", 250)
 ; Screen 1: Welcome
 ; =========================================================================
 _HandleScreen("Screen 1: Welcome", "Welcome to the Installation Wizard")
+_Log("Dumping controls on Screen 1 for diagnostics...")
+_DumpControls()
 _ClickNext()
 
 ; =========================================================================
@@ -353,7 +482,10 @@ _ClickNext()
 _HandleScreen("Screen 13: Installation Complete", "Installation Complete")
 
 _Log("Clicking Finish")
-ControlClick($mainWindow, "Installation Complete", "[TEXT:Finish]")
+If Not _ClickButton("Finish") Then
+    _Log("WARNING: Finish button click failed, trying Enter key")
+    Send("{ENTER}")
+EndIf
 Sleep(2000)
 
 ; =========================================================================
