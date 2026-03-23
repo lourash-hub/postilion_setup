@@ -1,0 +1,18 @@
+---
+# =============================================================================
+# 01_prerequisites.yml — Standalone prerequisites playbook
+# =============================================================================
+# Usage: ansible-playbook playbooks/01_prerequisites.yml
+# =============================================================================
+
+- name: "Phase 1: Postilion Prerequisites"
+  hosts: postilion_servers
+  gather_facts: true
+  tags:
+    - prerequisites
+
+  tasks:
+    - name: Import prerequisites tasks from role
+      ansible.builtin.include_role:
+        name: postilion_realtime
+        tasks_from: prerequisites

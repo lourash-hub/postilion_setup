@@ -1,0 +1,24 @@
+---
+# =============================================================================
+# Role entry point — imports all task phases
+# =============================================================================
+
+- name: Run prerequisites phase
+  ansible.builtin.import_tasks: prerequisites.yml
+  tags:
+    - prerequisites
+
+- name: Run extraction phase
+  ansible.builtin.import_tasks: extract.yml
+  tags:
+    - extract
+
+- name: Run installation phase
+  ansible.builtin.import_tasks: install.yml
+  tags:
+    - install
+
+- name: Run validation phase
+  ansible.builtin.import_tasks: validate.yml
+  tags:
+    - validate

@@ -1,0 +1,18 @@
+---
+# =============================================================================
+# 02_extract_installer.yml — Standalone extraction playbook
+# =============================================================================
+# Usage: ansible-playbook playbooks/02_extract_installer.yml
+# =============================================================================
+
+- name: "Phase 2: Extract Postilion Installer"
+  hosts: postilion_servers
+  gather_facts: true
+  tags:
+    - extract
+
+  tasks:
+    - name: Import extraction tasks from role
+      ansible.builtin.include_role:
+        name: postilion_realtime
+        tasks_from: extract

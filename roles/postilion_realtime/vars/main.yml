@@ -1,0 +1,29 @@
+---
+# =============================================================================
+# Role internal variables — higher precedence than defaults
+# =============================================================================
+
+# Installer details
+postilion_product_name: "ACI Postilion Realtime Framework"
+postilion_product_version: "v5.6.00.654114"
+postilion_edition: "Standard Edition"
+
+# Expected post-install paths (for validation)
+postilion_realtime_dir: "{{ postilion_install_dir }}\\realtime"
+postilion_bin_dir: "{{ postilion_install_dir }}\\realtime\\bin"
+postilion_license_dir: "{{ postilion_install_dir }}\\realtime\\license"
+
+# AutoIt window titles
+autoit_main_window: "Realtime Install Framework"
+autoit_popup_dir_exists: "Directory Exists"
+autoit_popup_logon_service: "Logon As Service"
+autoit_popup_event_viewer: "Event Viewer"
+
+# Service names to validate
+postilion_expected_services:
+  - "PostilionRealtime"
+  - "PostilionService"
+
+# Prerequisite features
+dotnet_48_url: "https://go.microsoft.com/fwlink/?linkid=2088631"
+dotnet_48_installer: "ndp48-x86-x64-allos-enu.exe"

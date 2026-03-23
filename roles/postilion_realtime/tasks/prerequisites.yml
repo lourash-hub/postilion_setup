@@ -1,0 +1,159 @@
+---
+# =============================================================================
+# Phase 1: Prerequisites
+# Ensures target server is ready for Postilion installation
+# =============================================================================
+
+- name: Check if Postilion is already installed
+  ansible.windows.win_stat:
+    path: "{{ postilion_realtime_dir }}"
+  register: postilion_already_installed
+  tags:
+    - prerequisites
+
+- name: Display installation status
+  ansible.builtin.debug:
+    msg: >-
+      Postilion Realtime is {{ 'ALREADY INSTALLED' if postilion_already_installed.stat.exists
+      else 'NOT installed' }} at {{ postilion_realtime_dir }}
+  tags:
+    - prerequisites
+
+# --- .NET Framework 4.8 ---
+- name: Check if .NET Framework 4.8 is installed
+  ansible.windows.win_reg_stat:
+    path: HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full
+    name: Release
+  register: dotnet_release
+  tags:
+    - prerequisites
+
+- name: Verify .NET Framework 4.8+ is present (release >= 528040)
+  ansible.builtin.assert:
+    that:
+      - dotnet_release.exists
+      - dotnet_release.value | int >= 528040
+    fail_msg: ".NET Framework 4.8 or later is required. Current release value: {{ dotnet_release.value | default('not found') }}"
+    success_msg: ".NET Framework 4.8+ is installed (release {{ dotnet_release.value }})"
+  tags:
+    - prerequisites
+
+# --- SQL Server ---
+- name: Verify SQL Server service is running
+  ansible.windows.win_service_info:
+    name: MSSQLSERVER
+  register: sql_service
+  tags:
+    - prerequisites
+
+- name: Assert SQL Server is running
+  ansible.builtin.assert:
+    that:
+      - sql_service.exists
+      - sql_service.services[0].state == 'started'
+    fail_msg: "SQL Server (MSSQLSERVER) must be installed and running"
+    success_msg: "SQL Server is running"
+  tags:
+    - prerequisites
+
+# --- Create directories ---
+- name: Create Postilion installation directory
+  ansible.windows.win_file:
+    path: "{{ postilion_install_dir }}"
+    state: directory
+  tags:
+    - prerequisites
+
+- name: Create Postilion license directory
+  ansible.windows.win_file:
+    path: "{{ postilion_install_dir }}\\realtime\\license"
+    state: directory
+  tags:
+    - prerequisites
+
+- name: Create log directory
+  ansible.windows.win_file:
+    path: "{{ log_dir }}"
+    state: directory
+  tags:
+    - prerequisites
+
+- name: Create temp directory
+  ansible.windows.win_file:
+    path: "{{ temp_dir }}"
+    state: directory
+  tags:
+    - prerequisites
+
+# --- License file ---
+- name: Check if license source file exists
+  ansible.windows.win_stat:
+    path: "{{ postilion_license_source }}"
+  register: license_source_stat
+  tags:
+    - prerequisites
+
+- name: Assert license source file exists
+  ansible.builtin.assert:
+    that:
+      - license_source_stat.stat.exists
+    fail_msg: "License file not found at {{ postilion_license_source }}"
+    success_msg: "License file found at {{ postilion_license_source }}"
+  tags:
+    - prerequisites
+
+- name: Copy license file to destination
+  ansible.windows.win_copy:
+    src: "{{ postilion_license_source }}"
+    dest: "{{ postilion_license_dest }}"
+    remote_src: true
+  tags:
+    - prerequisites
+
+# --- Service account permissions ---
+- name: Grant SeServiceLogonRight to service account
+  ansible.windows.win_user_right:
+    name: SeServiceLogonRight
+    users:
+      - "{{ postilion_svc_domain }}\\{{ postilion_svc_username }}"
+    action: add
+  tags:
+    - prerequisites
+
+# --- Close Event Viewer to prevent popup ---
+- name: Close Event Viewer (mmc.exe) if running
+  ansible.windows.win_shell: |
+    $mmc = Get-Process -Name mmc -ErrorAction SilentlyContinue
+    if ($mmc) {
+        $mmc | Stop-Process -Force
+        Write-Output "Event Viewer (mmc.exe) was running and has been closed"
+    } else {
+        Write-Output "Event Viewer (mmc.exe) is not running"
+    }
+  register: mmc_result
+  changed_when: "'has been closed' in mmc_result.stdout"
+  tags:
+    - prerequisites
+
+# --- Verify self-extractor exists ---
+- name: Check if Postilion self-extractor exists
+  ansible.windows.win_stat:
+    path: "{{ postilion_self_extractor }}"
+  register: self_extractor_stat
+  tags:
+    - prerequisites
+
+- name: Assert self-extractor file exists
+  ansible.builtin.assert:
+    that:
+      - self_extractor_stat.stat.exists
+    fail_msg: "Postilion self-extractor not found at {{ postilion_self_extractor }}"
+    success_msg: "Self-extractor found at {{ postilion_self_extractor }}"
+  tags:
+    - prerequisites
+
+- name: Prerequisites phase complete
+  ansible.builtin.debug:
+    msg: "All prerequisites verified successfully"
+  tags:
+    - prerequisites

@@ -1,0 +1,30 @@
+---
+# =============================================================================
+# Handlers — triggered by notify in tasks
+# =============================================================================
+
+- name: Restart Postilion services
+  ansible.windows.win_shell: |
+    Get-Service | Where-Object { $_.DisplayName -like "*Postilion*" -or $_.DisplayName -like "*Realtime*" } |
+    ForEach-Object { Restart-Service $_.Name -Force }
+  listen: "restart postilion"
+
+- name: Restart SQL Server
+  ansible.windows.win_service:
+    name: MSSQLSERVER
+    state: restarted
+  listen: "restart sql server"
+
+- name: Cleanup AutoIt script
+  ansible.windows.win_file:
+    path: "{{ autoit_script_dest }}"
+    state: absent
+  listen: "cleanup autoit"
+  when: cleanup_autoit_script | bool
+
+- name: Cleanup generated AutoIt source
+  ansible.windows.win_file:
+    path: "{{ temp_dir }}\\postilion_install.au3"
+    state: absent
+  listen: "cleanup autoit source"
+  when: cleanup_autoit_script | bool

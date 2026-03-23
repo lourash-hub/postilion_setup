@@ -1,0 +1,364 @@
+; =============================================================================
+; Postilion Realtime Framework v5.6 — AutoIt GUI Installer Automation
+; Standalone source file (for manual testing / non-Ansible use)
+; =============================================================================
+; This is the STANDALONE version with hardcoded defaults.
+; For Ansible deployments, use the Jinja2 template version instead:
+;   roles/postilion_realtime/templates/postilion_install.au3.j2
+; =============================================================================
+
+#include <MsgBoxConstants.au3>
+#include <StringConstants.au3>
+
+; === Configuration ===
+; MODIFY THESE VALUES FOR YOUR ENVIRONMENT
+Local $installDir = "C:\Postilion"
+Local $dbServer = @ComputerName
+Local $dbPort = "1433"
+Local $dbSchema = "dbo"
+Local $dbName = "realtime"
+Local $dbAuth = "Windows Authentication"
+Local $dbLogin = ""
+Local $dbPassword = ""
+Local $dbLocation = "local"
+Local $dbDataDevice = "realtime_data"
+Local $dbLogDevice = "realtime_log"
+Local $dbDataPath = "D:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\data"
+Local $dbLogPath = "D:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\data"
+Local $svcHostname = @ComputerName
+Local $svcDomain = @ComputerName
+Local $svcUsername = "Administrator"
+Local $svcPassword = "CHANGE_ME"
+Local $defaultCurrency = "Naira (566)"
+Local $licensePath = "C:\Postilion\realtime\license\postilion.lic"
+
+; === Timeouts ===
+Local $screenWait = 2000       ; ms between screen actions
+Local $popupWait = 3           ; seconds to wait for conditional popups
+Local $progressTimeout = 600   ; seconds to wait for install to complete
+Local $screenTimeout = 60      ; seconds to wait for each screen
+
+; === Logging ===
+Local $logFile = "C:\logs\postilion_autoit_install.log"
+
+; === Window titles ===
+Local $mainWindow = "Realtime Install Framework"
+Local $popupDirExists = "Directory Exists"
+Local $popupLogonService = "Logon As Service"
+Local $popupEventViewer = "Event Viewer"
+
+; === Exit codes ===
+Local Const $EXIT_SUCCESS = 0
+Local Const $EXIT_TIMEOUT = 1
+Local Const $EXIT_UNEXPECTED = 2
+Local Const $EXIT_CONTROL_NOT_FOUND = 3
+Local Const $EXIT_FATAL = 99
+
+; =============================================================================
+; Logging function
+; =============================================================================
+Func _Log($msg)
+    Local $timestamp = @YEAR & "-" & @MON & "-" & @MDAY & " " & @HOUR & ":" & @MIN & ":" & @SEC
+    Local $logLine = $timestamp & " | " & $msg
+    ConsoleWrite($logLine & @CRLF)
+    ; Ensure log directory exists
+    If Not FileExists("C:\logs") Then DirCreate("C:\logs")
+    FileWriteLine($logFile, $logLine)
+EndFunc
+
+; =============================================================================
+; Screen handler — waits for a screen and validates it appeared
+; =============================================================================
+Func _HandleScreen($screenName, $expectedText, $timeout = 0)
+    If $timeout = 0 Then $timeout = $screenTimeout
+    _Log("Waiting for screen: " & $screenName & " (timeout: " & $timeout & "s)")
+
+    Local $result = WinWaitActive($mainWindow, $expectedText, $timeout)
+    If $result = 0 Then
+        _Log("ERROR: Timeout waiting for screen: " & $screenName)
+        _Log("Expected text: " & $expectedText)
+        Exit $EXIT_TIMEOUT
+    EndIf
+
+    _Log("Screen found: " & $screenName)
+    Sleep($screenWait)
+    Return $result
+EndFunc
+
+; =============================================================================
+; Conditional popup handler
+; =============================================================================
+Func _HandlePopup($title, $buttonText, $waitTime = 0)
+    If $waitTime = 0 Then $waitTime = $popupWait
+    _Log("Checking for popup: " & $title & " (wait: " & $waitTime & "s)")
+
+    Sleep($waitTime * 1000)
+    If WinExists($title) Then
+        _Log("Popup detected: " & $title)
+        WinActivate($title)
+        Sleep(500)
+        Local $clickResult = ControlClick($title, "", "[TEXT:" & $buttonText & "]")
+        If $clickResult = 0 Then
+            _Log("WARNING: ControlClick failed on popup " & $title & ", trying alternate method")
+            ControlClick($title, "", "[CLASS:Button; INSTANCE:1]")
+        EndIf
+        Sleep(1000)
+        _Log("Popup handled: " & $title)
+        Return True
+    EndIf
+
+    _Log("Popup not detected: " & $title)
+    Return False
+EndFunc
+
+; =============================================================================
+; Click Next button
+; =============================================================================
+Func _ClickNext()
+    _Log("Clicking Next >")
+    Local $result = ControlClick($mainWindow, "", "[TEXT:Next >]")
+    If $result = 0 Then
+        _Log("WARNING: ControlClick on [TEXT:Next >] failed, trying by class")
+        $result = ControlClick($mainWindow, "", "[CLASS:Button; TEXT:Next >]")
+    EndIf
+    If $result = 0 Then
+        _Log("ERROR: Cannot click Next button")
+        Exit $EXIT_CONTROL_NOT_FOUND
+    EndIf
+    Sleep($screenWait)
+EndFunc
+
+; =============================================================================
+; MAIN INSTALLATION FLOW
+; =============================================================================
+
+_Log("=== Postilion Realtime Framework AutoIt Installer (Standalone) ===")
+_Log("Install directory: " & $installDir)
+_Log("DB Server: " & $dbServer)
+_Log("Service hostname: " & $svcHostname)
+_Log("Starting GUI automation...")
+
+; Ensure AutoIt options are set for reliability
+AutoItSetOption("WinTitleMatchMode", 2)   ; substring match
+AutoItSetOption("SendKeyDelay", 50)
+AutoItSetOption("WinWaitDelay", 250)
+
+; =========================================================================
+; Screen 1: Welcome
+; =========================================================================
+_HandleScreen("Screen 1: Welcome", "Welcome to the Installation Wizard")
+_ClickNext()
+
+; =========================================================================
+; Screen 2: Destination Directory
+; =========================================================================
+_HandleScreen("Screen 2: Destination Directory", "Destination Directory")
+
+_Log("Setting destination directory to: " & $installDir)
+Local $editResult = ControlSetText($mainWindow, "Destination Directory", "[CLASS:Edit; INSTANCE:1]", $installDir)
+If $editResult = 0 Then
+    _Log("ERROR: Cannot set destination directory in edit field")
+    Exit $EXIT_CONTROL_NOT_FOUND
+EndIf
+Sleep(500)
+_ClickNext()
+
+; =========================================================================
+; Screen 2a: Directory Exists (CONDITIONAL)
+; =========================================================================
+_HandlePopup($popupDirExists, "Yes", $popupWait)
+
+; =========================================================================
+; Screen 3: Installation Type
+; =========================================================================
+_HandleScreen("Screen 3: Installation Type", "Installation Type")
+
+_Log("Verifying Principal Server is selected")
+ControlClick($mainWindow, "Installation Type", "[TEXT:Principal Server]")
+Sleep(500)
+_ClickNext()
+
+; =========================================================================
+; Screen 4: License Validation
+; =========================================================================
+_HandleScreen("Screen 4: License Validation", "License Validation")
+
+_Log("License path: " & $licensePath)
+ControlSetText($mainWindow, "License Validation", "[CLASS:Edit; INSTANCE:1]", $licensePath)
+Sleep(500)
+_ClickNext()
+
+; =========================================================================
+; Screen 5: Realtime Framework Data Source
+; =========================================================================
+_HandleScreen("Screen 5: Data Source", "Realtime Framework Data Source")
+
+_Log("Setting DB Server: " & $dbServer)
+ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:1]", $dbServer)
+Sleep(300)
+
+_Log("Setting DB Port: " & $dbPort)
+ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:2]", $dbPort)
+Sleep(300)
+
+_Log("Setting DB Schema: " & $dbSchema)
+ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:3]", $dbSchema)
+Sleep(300)
+
+_Log("Setting DB Name: " & $dbName)
+ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:4]", $dbName)
+Sleep(300)
+
+_Log("Setting DB Auth: " & $dbAuth)
+ControlCommand($mainWindow, "Realtime Framework Data Source", "[CLASS:ComboBox; INSTANCE:1]", "SelectString", $dbAuth)
+Sleep(500)
+
+If $dbAuth = "SQL Server Authentication" Then
+    _Log("Setting SQL Auth credentials")
+    ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:5]", $dbLogin)
+    Sleep(300)
+    ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:6]", $dbPassword)
+    Sleep(300)
+EndIf
+
+_ClickNext()
+
+; =========================================================================
+; Screen 6: Realtime Framework Database
+; =========================================================================
+_HandleScreen("Screen 6: Database Details", "Realtime Framework Database")
+
+If $dbLocation = "local" Then
+    _Log("Selecting Local database server")
+    ControlClick($mainWindow, "Realtime Framework Database", "[TEXT:Local database server]")
+Else
+    _Log("Selecting Remote database server")
+    ControlClick($mainWindow, "Realtime Framework Database", "[TEXT:Remote database server]")
+EndIf
+Sleep(500)
+
+_Log("Setting Database Name: " & $dbName)
+ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:1]", $dbName)
+Sleep(300)
+
+_Log("Setting Data Device: " & $dbDataDevice)
+ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:2]", $dbDataDevice)
+Sleep(300)
+
+Local $dataFilePath = $dbDataPath & "\" & $dbDataDevice & ".mdf"
+_Log("Setting Data Device Path: " & $dataFilePath)
+ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:3]", $dataFilePath)
+Sleep(300)
+
+_Log("Setting Log Device: " & $dbLogDevice)
+ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:4]", $dbLogDevice)
+Sleep(300)
+
+Local $logFilePath = $dbLogPath & "\" & $dbLogDevice & ".ldf"
+_Log("Setting Log Device Path: " & $logFilePath)
+ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:5]", $logFilePath)
+Sleep(300)
+
+_ClickNext()
+
+; =========================================================================
+; Screen 7: Services Server
+; =========================================================================
+_HandleScreen("Screen 7: Services Server", "Services Server")
+
+_Log("Setting Services Server hostname: " & $svcHostname)
+ControlSetText($mainWindow, "Services Server", "[CLASS:Edit; INSTANCE:1]", $svcHostname)
+Sleep(500)
+_ClickNext()
+
+; =========================================================================
+; Screen 8: Service Account
+; =========================================================================
+_HandleScreen("Screen 8: Service Account", "Service Account")
+
+_Log("Setting Service Domain: " & $svcDomain)
+ControlSetText($mainWindow, "Service Account", "[CLASS:Edit; INSTANCE:1]", $svcDomain)
+Sleep(300)
+
+_Log("Setting Service Username: " & $svcUsername)
+ControlSetText($mainWindow, "Service Account", "[CLASS:Edit; INSTANCE:2]", $svcUsername)
+Sleep(300)
+
+_Log("Setting Service Password: ********")
+ControlSetText($mainWindow, "Service Account", "[CLASS:Edit; INSTANCE:3]", $svcPassword)
+Sleep(500)
+
+_ClickNext()
+
+; =========================================================================
+; Screen 8a: Logon As Service (CONDITIONAL)
+; =========================================================================
+_HandlePopup($popupLogonService, "Yes", $popupWait)
+
+; =========================================================================
+; Screen 9: Default Currency
+; =========================================================================
+_HandleScreen("Screen 9: Default Currency", "Default Currency")
+
+_Log("Selecting default currency: " & $defaultCurrency)
+Local $currencyResult = ControlCommand($mainWindow, "Default Currency", "[CLASS:ComboBox; INSTANCE:1]", "SelectString", $defaultCurrency)
+If $currencyResult = 0 Then
+    _Log("WARNING: SelectString failed for currency, trying alternate approach")
+    ControlClick($mainWindow, "Default Currency", "[CLASS:ComboBox; INSTANCE:1]")
+    Sleep(500)
+    Send($defaultCurrency)
+    Sleep(500)
+EndIf
+Sleep(500)
+_ClickNext()
+
+; =========================================================================
+; Screen 10: Ready to Install
+; =========================================================================
+_HandleScreen("Screen 10: Ready to Install", "Ready to Install")
+_Log("Starting installation...")
+_ClickNext()
+
+; =========================================================================
+; Screen 10a: Event Viewer Warning (CONDITIONAL)
+; =========================================================================
+_HandlePopup($popupEventViewer, "OK", $popupWait)
+
+; =========================================================================
+; Screen 11: Install in Progress — WAIT
+; =========================================================================
+_Log("Installation in progress — waiting up to " & $progressTimeout & " seconds...")
+
+WinWaitActive($mainWindow, "Install in progress", 30)
+
+Local $installComplete = WinWaitActive($mainWindow, "PCI DSS", $progressTimeout)
+If $installComplete = 0 Then
+    _Log("ERROR: Installation timed out after " & $progressTimeout & " seconds")
+    _Log("The installer may still be running. Check the server manually.")
+    Exit $EXIT_TIMEOUT
+EndIf
+
+_Log("Installation completed — PCI DSS screen appeared")
+
+; =========================================================================
+; Screen 12: PCI DSS Considerations
+; =========================================================================
+_Log("Screen 12: PCI DSS Considerations")
+Sleep($screenWait)
+_ClickNext()
+
+; =========================================================================
+; Screen 13: Installation Complete
+; =========================================================================
+_HandleScreen("Screen 13: Installation Complete", "Installation Complete")
+
+_Log("Clicking Finish")
+ControlClick($mainWindow, "Installation Complete", "[TEXT:Finish]")
+Sleep(2000)
+
+; =========================================================================
+; DONE
+; =========================================================================
+_Log("=== Installation completed successfully ===")
+_Log("Exit code: 0")
+Exit $EXIT_SUCCESS

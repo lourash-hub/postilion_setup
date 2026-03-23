@@ -1,0 +1,56 @@
+---
+# =============================================================================
+# Phase 2: Extract Installer
+# Silently extracts the WinZip self-extractor
+# =============================================================================
+
+- name: Check if installer is already extracted
+  ansible.windows.win_stat:
+    path: "{{ postilion_setup_exe }}"
+  register: setup_exe_stat
+  tags:
+    - extract
+
+- name: Extract Postilion installer silently
+  ansible.windows.win_command: >
+    "{{ postilion_self_extractor }}" /auto "{{ postilion_extraction_path }}"
+  args:
+    creates: "{{ postilion_setup_exe }}"
+  register: extraction_result
+  when: not setup_exe_stat.stat.exists
+  timeout: 300
+  tags:
+    - extract
+
+- name: Wait for extraction to complete
+  ansible.windows.win_stat:
+    path: "{{ postilion_setup_exe }}"
+  register: setup_exe_check
+  until: setup_exe_check.stat.exists
+  retries: 30
+  delay: 10
+  when: not setup_exe_stat.stat.exists
+  tags:
+    - extract
+
+- name: Verify setup.exe exists after extraction
+  ansible.windows.win_stat:
+    path: "{{ postilion_setup_exe }}"
+  register: setup_exe_final
+  tags:
+    - extract
+
+- name: Assert setup.exe was extracted successfully
+  ansible.builtin.assert:
+    that:
+      - setup_exe_final.stat.exists
+    fail_msg: "setup.exe not found at {{ postilion_setup_exe }} — extraction may have failed"
+    success_msg: "Installer extracted successfully to {{ postilion_installer_source }}"
+  tags:
+    - extract
+
+- name: Extraction phase complete
+  ansible.builtin.debug:
+    msg: "Postilion installer extracted to {{ postilion_installer_source }}"
+  tags:
+    - extract

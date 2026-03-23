@@ -1,0 +1,24 @@
+---
+# =============================================================================
+# Global variables shared across all hosts
+# =============================================================================
+
+# Logging
+log_dir: "C:\\logs"
+autoit_log_file: "C:\\logs\\postilion_autoit_install.log"
+
+# Default credentials (no vault — plaintext for now)
+ansible_user: "Administrator"
+ansible_password: "MyP@ssw0rd!"
+postilion_svc_password: "MyP@ssw0rd!"
+postilion_db_password: ""
+
+# Temporary working directory on targets
+temp_dir: "C:\\temp"
+
+# AutoIt compiled script name
+autoit_script_name: "postilion_install.exe"
+autoit_script_dest: "{{ temp_dir }}\\{{ autoit_script_name }}"
+
+# Cleanup after install
+cleanup_autoit_script: true

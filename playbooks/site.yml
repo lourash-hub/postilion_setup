@@ -1,0 +1,41 @@
+---
+# =============================================================================
+# site.yml — Main orchestrator playbook
+# Deploys Postilion Realtime Framework v5.6 end-to-end
+# =============================================================================
+# Usage:
+#   ansible-playbook playbooks/site.yml
+#   ansible-playbook playbooks/site.yml --tags prerequisites
+#   ansible-playbook playbooks/site.yml --tags extract
+#   ansible-playbook playbooks/site.yml --tags install
+#   ansible-playbook playbooks/site.yml --tags validate
+# =============================================================================
+
+- name: Deploy Postilion Realtime Framework v5.6
+  hosts: postilion_servers
+  gather_facts: true
+
+  pre_tasks:
+    - name: Display deployment information
+      ansible.builtin.debug:
+        msg: |
+          ====================================================
+          POSTILION REALTIME FRAMEWORK DEPLOYMENT
+          ====================================================
+          Target host:    {{ inventory_hostname }}
+          Hostname:       {{ ansible_hostname }}
+          OS:             {{ ansible_os_name | default('Windows') }}
+          Install dir:    {{ postilion_install_dir }}
+          DB Server:      {{ postilion_db_server }}
+          DB Name:        {{ postilion_db_name }}
+          ====================================================
+      tags: always
+
+  roles:
+    - role: postilion_realtime
+
+  post_tasks:
+    - name: Deployment complete
+      ansible.builtin.debug:
+        msg: "Postilion Realtime Framework deployment finished on {{ inventory_hostname }}"
+      tags: always

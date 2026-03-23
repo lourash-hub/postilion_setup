@@ -1,0 +1,46 @@
+---
+# =============================================================================
+# Postilion Realtime Framework installation variables
+# =============================================================================
+
+# --- Installation paths ---
+postilion_install_dir: "C:\\Postilion"
+postilion_installer_source: "D:\\Postilion\\Postilion\\Realtime\\RealtimeFramework_se_v5.6_build654114"
+postilion_self_extractor: "D:\\RealtimeFramework_se_v5.6_build654114.exe"
+postilion_extraction_path: "D:\\Postilion"
+postilion_setup_exe: "{{ postilion_installer_source }}\\setup.exe"
+postilion_license_source: "D:\\postilion.lic"
+postilion_license_dest: "C:\\Postilion\\realtime\\license\\postilion.lic"
+
+# --- Database configuration ---
+postilion_db_platform: "Microsoft SQL Server"
+postilion_db_server: "{{ ansible_hostname }}"
+postilion_db_port: "1433"
+postilion_db_schema: "dbo"
+postilion_db_name: "realtime"
+postilion_db_auth: "Windows Authentication"
+postilion_db_login: ""
+postilion_db_password: ""
+
+# --- Database file details ---
+postilion_db_location: "local"
+postilion_db_data_device: "realtime_data"
+postilion_db_log_device: "realtime_log"
+postilion_db_data_path: "D:\\Program Files\\Microsoft SQL Server\\MSSQL15.MSSQLSERVER\\MSSQL\\data"
+postilion_db_log_path: "D:\\Program Files\\Microsoft SQL Server\\MSSQL15.MSSQLSERVER\\MSSQL\\data"
+
+# --- Service configuration ---
+postilion_svc_hostname: "{{ ansible_hostname }}"
+postilion_svc_domain: "{{ ansible_hostname }}"
+postilion_svc_username: "Administrator"
+postilion_svc_password: "MyP@ssw0rd!"
+
+# --- Application configuration ---
+postilion_default_currency: "Naira (566)"
+postilion_install_type: "Principal Server"
+
+# --- Timeouts ---
+postilion_install_timeout: 900
+postilion_screen_wait: 2000
+postilion_popup_wait: 3
+postilion_progress_timeout: 600

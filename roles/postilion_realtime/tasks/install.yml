@@ -1,0 +1,157 @@
+---
+# =============================================================================
+# Phase 3: Install Postilion Realtime via AutoIt GUI Automation
+# Launches setup.exe in background, then runs compiled AutoIt script
+# =============================================================================
+
+- name: Check if Postilion is already installed
+  ansible.windows.win_stat:
+    path: "{{ postilion_realtime_dir }}\\bin"
+  register: postilion_bin_check
+  tags:
+    - install
+
+- name: Skip installation if already installed
+  ansible.builtin.debug:
+    msg: "Postilion Realtime is already installed at {{ postilion_realtime_dir }}. Skipping installation."
+  when: postilion_bin_check.stat.exists
+  tags:
+    - install
+
+# --- Generate AutoIt script from template ---
+- name: Generate AutoIt script from Jinja2 template
+  ansible.windows.win_template:
+    src: postilion_install.au3.j2
+    dest: "{{ temp_dir }}\\postilion_install.au3"
+  when: not postilion_bin_check.stat.exists
+  tags:
+    - install
+
+# --- Copy compiled AutoIt script ---
+- name: Copy compiled AutoIt script to target
+  ansible.windows.win_copy:
+    src: postilion_install.exe
+    dest: "{{ autoit_script_dest }}"
+  when: not postilion_bin_check.stat.exists
+  tags:
+    - install
+
+# --- Clear any previous install log ---
+- name: Remove previous AutoIt install log
+  ansible.windows.win_file:
+    path: "{{ autoit_log_file }}"
+    state: absent
+  when: not postilion_bin_check.stat.exists
+  tags:
+    - install
+
+# --- Launch the installer GUI in background ---
+- name: Launch Postilion setup.exe in background
+  ansible.windows.win_shell: |
+    $process = Start-Process -FilePath "{{ postilion_setup_exe }}" -PassThru
+    Write-Output $process.Id
+  register: installer_process
+  when: not postilion_bin_check.stat.exists
+  tags:
+    - install
+
+- name: Display installer PID
+  ansible.builtin.debug:
+    msg: "Postilion installer launched with PID: {{ installer_process.stdout | trim }}"
+  when:
+    - not postilion_bin_check.stat.exists
+    - installer_process is defined
+  tags:
+    - install
+
+# --- Wait for installer window to appear ---
+- name: Wait for installer window to appear
+  ansible.windows.win_shell: |
+    $timeout = 60
+    $elapsed = 0
+    while ($elapsed -lt $timeout) {
+        $proc = Get-Process | Where-Object { $_.MainWindowTitle -like "*Realtime Install*" }
+        if ($proc) {
+            Write-Output "Installer window detected"
+            exit 0
+        }
+        Start-Sleep -Seconds 2
+        $elapsed += 2
+    }
+    Write-Output "Timeout waiting for installer window"
+    exit 1
+  register: installer_window
+  failed_when: installer_window.rc != 0
+  when: not postilion_bin_check.stat.exists
+  tags:
+    - install
+
+# --- Run AutoIt GUI automation script ---
+- name: Run AutoIt GUI automation script
+  ansible.windows.win_command: "{{ autoit_script_dest }}"
+  register: autoit_result
+  timeout: "{{ postilion_install_timeout }}"
+  failed_when: autoit_result.rc != 0
+  when: not postilion_bin_check.stat.exists
+  tags:
+    - install
+
+- name: Display AutoIt exit code
+  ansible.builtin.debug:
+    msg: "AutoIt script completed with exit code: {{ autoit_result.rc }}"
+  when:
+    - not postilion_bin_check.stat.exists
+    - autoit_result is defined
+  tags:
+    - install
+
+# --- Retrieve AutoIt log for troubleshooting ---
+- name: Read AutoIt installation log
+  ansible.windows.win_shell: |
+    if (Test-Path "{{ autoit_log_file }}") {
+        Get-Content "{{ autoit_log_file }}" -Tail 50
+    } else {
+        Write-Output "No AutoIt log file found"
+    }
+  register: autoit_log
+  when: not postilion_bin_check.stat.exists
+  tags:
+    - install
+
+- name: Display AutoIt log output
+  ansible.builtin.debug:
+    msg: "{{ autoit_log.stdout_lines }}"
+  when:
+    - not postilion_bin_check.stat.exists
+    - autoit_log is defined
+    - autoit_log.stdout_lines | length > 0
+  tags:
+    - install
+
+# --- Cleanup ---
+- name: Clean up AutoIt script from target
+  ansible.windows.win_file:
+    path: "{{ autoit_script_dest }}"
+    state: absent
+  when:
+    - not postilion_bin_check.stat.exists
+    - cleanup_autoit_script | bool
+  notify: "cleanup autoit"
+  tags:
+    - install
+
+- name: Clean up generated AutoIt source
+  ansible.windows.win_file:
+    path: "{{ temp_dir }}\\postilion_install.au3"
+    state: absent
+  when:
+    - not postilion_bin_check.stat.exists
+    - cleanup_autoit_script | bool
+  tags:
+    - install
+
+- name: Installation phase complete
+  ansible.builtin.debug:
+    msg: "Postilion Realtime installation phase completed"
+  tags:
+    - install

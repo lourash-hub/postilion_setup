@@ -1,0 +1,22 @@
+---
+# =============================================================================
+# 03_install_realtime.yml — Standalone install playbook
+# =============================================================================
+# Usage: ansible-playbook playbooks/03_install_realtime.yml
+# =============================================================================
+
+- name: "Phase 3: Install Postilion Realtime via AutoIt"
+  hosts: postilion_servers
+  gather_facts: true
+  tags:
+    - install
+
+  tasks:
+    - name: Import installation tasks from role
+      ansible.builtin.include_role:
+        name: postilion_realtime
+        tasks_from: install
+
+  handlers:
+    - name: Import role handlers
+      ansible.builtin.import_tasks: ../roles/postilion_realtime/handlers/main.yml

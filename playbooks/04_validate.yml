@@ -1,0 +1,18 @@
+---
+# =============================================================================
+# 04_validate.yml — Standalone validation playbook
+# =============================================================================
+# Usage: ansible-playbook playbooks/04_validate.yml
+# =============================================================================
+
+- name: "Phase 4: Validate Postilion Installation"
+  hosts: postilion_servers
+  gather_facts: true
+  tags:
+    - validate
+
+  tasks:
+    - name: Import validation tasks from role
+      ansible.builtin.include_role:
+        name: postilion_realtime
+        tasks_from: validate

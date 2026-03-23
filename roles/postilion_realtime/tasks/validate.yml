@@ -1,0 +1,174 @@
+---
+# =============================================================================
+# Phase 4: Post-Install Validation
+# Verifies that Postilion Realtime was installed correctly
+# =============================================================================
+
+# --- Verify installation directory ---
+- name: Verify Postilion installation directory exists
+  ansible.windows.win_stat:
+    path: "{{ postilion_realtime_dir }}"
+  register: install_dir_check
+  tags:
+    - validate
+
+- name: Assert installation directory exists
+  ansible.builtin.assert:
+    that:
+      - install_dir_check.stat.exists
+    fail_msg: "Installation directory {{ postilion_realtime_dir }} does not exist — install may have failed"
+    success_msg: "Installation directory {{ postilion_realtime_dir }} exists"
+  tags:
+    - validate
+
+# --- Verify bin directory ---
+- name: Verify Postilion bin directory exists
+  ansible.windows.win_stat:
+    path: "{{ postilion_bin_dir }}"
+  register: bin_dir_check
+  tags:
+    - validate
+
+- name: Assert bin directory exists
+  ansible.builtin.assert:
+    that:
+      - bin_dir_check.stat.exists
+    fail_msg: "Bin directory {{ postilion_bin_dir }} does not exist"
+    success_msg: "Bin directory {{ postilion_bin_dir }} exists"
+  tags:
+    - validate
+
+# --- Verify license file ---
+- name: Verify license file is in place
+  ansible.windows.win_stat:
+    path: "{{ postilion_license_dest }}"
+  register: license_check
+  tags:
+    - validate
+
+- name: Assert license file exists
+  ansible.builtin.assert:
+    that:
+      - license_check.stat.exists
+    fail_msg: "License file not found at {{ postilion_license_dest }}"
+    success_msg: "License file present at {{ postilion_license_dest }}"
+  tags:
+    - validate
+
+# --- Verify Windows services ---
+- name: Check for Postilion Windows services
+  ansible.windows.win_shell: |
+    $services = Get-Service | Where-Object {
+        $_.DisplayName -like "*Postilion*" -or
+        $_.DisplayName -like "*Realtime*" -or
+        $_.ServiceName -like "*Postilion*" -or
+        $_.ServiceName -like "*Realtime*"
+    }
+    if ($services) {
+        $services | Select-Object Name, DisplayName, Status, StartType |
+        ConvertTo-Json -Depth 3
+    } else {
+        Write-Output "NO_SERVICES_FOUND"
+    }
+  register: postilion_services
+  tags:
+    - validate
+
+- name: Assert Postilion services exist
+  ansible.builtin.assert:
+    that:
+      - "'NO_SERVICES_FOUND' not in postilion_services.stdout"
+    fail_msg: "No Postilion services found — installation may have failed"
+    success_msg: "Postilion services detected"
+  tags:
+    - validate
+
+- name: Display discovered Postilion services
+  ansible.builtin.debug:
+    msg: "{{ postilion_services.stdout }}"
+  tags:
+    - validate
+
+# --- Verify database ---
+- name: Verify realtime database exists in SQL Server
+  ansible.windows.win_shell: |
+    try {
+        $result = Invoke-Sqlcmd -Query "SELECT name, state_desc FROM sys.databases WHERE name = '{{ postilion_db_name }}'" -ServerInstance "{{ postilion_db_server }}" -ErrorAction Stop
+        if ($result) {
+            Write-Output "DATABASE_FOUND: $($result.name) state=$($result.state_desc)"
+        } else {
+            Write-Output "DATABASE_NOT_FOUND"
+        }
+    } catch {
+        Write-Output "SQL_ERROR: $($_.Exception.Message)"
+    }
+  register: db_check
+  tags:
+    - validate
+
+- name: Assert realtime database exists
+  ansible.builtin.assert:
+    that:
+      - "'DATABASE_FOUND' in db_check.stdout"
+    fail_msg: "Database '{{ postilion_db_name }}' not found on {{ postilion_db_server }}. Output: {{ db_check.stdout }}"
+    success_msg: "Database '{{ postilion_db_name }}' exists — {{ db_check.stdout | trim }}"
+  tags:
+    - validate
+
+# --- Verify database has tables ---
+- name: Check for tables in realtime database
+  ansible.windows.win_shell: |
+    try {
+        $result = Invoke-Sqlcmd -Query "SELECT COUNT(*) AS TableCount FROM {{ postilion_db_name }}.INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'" -ServerInstance "{{ postilion_db_server }}" -ErrorAction Stop
+        Write-Output "TABLE_COUNT: $($result.TableCount)"
+    } catch {
+        Write-Output "SQL_ERROR: $($_.Exception.Message)"
+    }
+  register: table_check
+  tags:
+    - validate
+
+- name: Display database table count
+  ansible.builtin.debug:
+    msg: "{{ table_check.stdout | trim }}"
+  tags:
+    - validate
+
+# --- Check Windows Event Log for installation errors ---
+- name: Check for Postilion-related event log errors
+  ansible.windows.win_shell: |
+    $events = Get-EventLog -LogName Application -Newest 50 -EntryType Error -ErrorAction SilentlyContinue |
+        Where-Object { $_.Message -like "*Postilion*" -or $_.Message -like "*Realtime*" -or $_.Source -like "*Postilion*" }
+    if ($events) {
+        $events | Select-Object TimeGenerated, Source, Message | ConvertTo-Json -Depth 3
+    } else {
+        Write-Output "NO_ERRORS_FOUND"
+    }
+  register: event_log_check
+  tags:
+    - validate
+
+- name: Display event log status
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'No Postilion-related errors found in Event Log' if 'NO_ERRORS_FOUND' in event_log_check.stdout
+      else 'WARNING: Postilion-related errors found in Event Log' }}
+  tags:
+    - validate
+
+# --- Final validation summary ---
+- name: Validation summary
+  ansible.builtin.debug:
+    msg: |
+      ====================================================
+      POSTILION REALTIME VALIDATION SUMMARY
+      ====================================================
+      Install directory:  {{ 'PASS' if install_dir_check.stat.exists else 'FAIL' }}
+      Bin directory:      {{ 'PASS' if bin_dir_check.stat.exists else 'FAIL' }}
+      License file:       {{ 'PASS' if license_check.stat.exists else 'FAIL' }}
+      Windows services:   {{ 'PASS' if 'NO_SERVICES_FOUND' not in postilion_services.stdout else 'FAIL' }}
+      Database:           {{ 'PASS' if 'DATABASE_FOUND' in db_check.stdout else 'FAIL' }}
+      Event log errors:   {{ 'CLEAN' if 'NO_ERRORS_FOUND' in event_log_check.stdout else 'WARNINGS' }}
+      ====================================================
+  tags:
+    - validate
