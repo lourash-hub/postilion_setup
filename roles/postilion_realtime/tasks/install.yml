@@ -45,53 +45,150 @@
   tags:
     - install
 
-# --- Launch the installer GUI in background ---
-- name: Launch Postilion setup.exe in background
-  ansible.windows.win_shell: |
-    $process = Start-Process -FilePath "{{ postilion_setup_exe }}" -PassThru
-    Write-Output $process.Id
-  register: installer_process
+# =============================================================================
+# IMPORTANT: WinRM runs in Session 0 (non-interactive). GUI apps launched via
+# WinRM have no visible desktop, so both the installer and AutoIt must be
+# launched in the interactive user session using a scheduled task.
+# =============================================================================
+
+# --- Create log directory ---
+- name: Ensure log directory exists
+  ansible.windows.win_file:
+    path: "{{ log_dir }}"
+    state: directory
   when: not postilion_bin_check.stat.exists
   tags:
     - install
 
-- name: Display installer PID
-  ansible.builtin.debug:
-    msg: "Postilion installer launched with PID: {{ installer_process.stdout | trim }}"
-  when:
-    - not postilion_bin_check.stat.exists
-    - installer_process is defined
+# --- Launch installer + AutoIt together via scheduled task ---
+- name: Create launcher script that starts installer then AutoIt
+  ansible.windows.win_copy:
+    content: |
+      # Postilion interactive installer launcher
+      # Runs in the interactive desktop session via scheduled task
+      $logFile = "{{ autoit_log_file }}"
+      $ErrorActionPreference = "Continue"
+
+      # Start the installer GUI
+      $installer = Start-Process -FilePath "{{ postilion_setup_exe }}" -PassThru
+      Add-Content -Path $logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [LAUNCHER] Installer started PID=$($installer.Id)"
+
+      # Wait for the installer window to appear (up to 120 seconds)
+      $timeout = 120
+      $elapsed = 0
+      $windowFound = $false
+      while ($elapsed -lt $timeout) {
+          Start-Sleep -Seconds 3
+          $elapsed += 3
+          # Check for the window using multiple methods
+          $procs = Get-Process | Where-Object {
+              $_.MainWindowTitle -like "*Realtime*" -or
+              $_.MainWindowTitle -like "*Install*Framework*" -or
+              $_.MainWindowTitle -like "*Postilion*"
+          }
+          if ($procs) {
+              $windowFound = $true
+              Add-Content -Path $logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [LAUNCHER] Installer window detected: $($procs[0].MainWindowTitle) (PID=$($procs[0].Id)) after ${elapsed}s"
+              break
+          }
+      }
+
+      if (-not $windowFound) {
+          Add-Content -Path $logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [LAUNCHER] WARNING: Window not detected after ${timeout}s, proceeding with AutoIt anyway"
+      }
+
+      # Small delay to let the window fully render
+      Start-Sleep -Seconds 5
+
+      # Launch AutoIt automation
+      Add-Content -Path $logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [LAUNCHER] Starting AutoIt script: {{ autoit_script_dest }}"
+      $autoit = Start-Process -FilePath "{{ autoit_script_dest }}" -Wait -PassThru
+      Add-Content -Path $logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [LAUNCHER] AutoIt finished with exit code: $($autoit.ExitCode)"
+
+      # Write exit code to a marker file for Ansible to read
+      $autoit.ExitCode | Out-File -FilePath "{{ temp_dir }}\autoit_exitcode.txt" -NoNewline
+    dest: "{{ temp_dir }}\\postilion_launcher.ps1"
+  when: not postilion_bin_check.stat.exists
   tags:
     - install
 
-# --- Wait for installer window to appear ---
-- name: Wait for installer window to appear
+# --- Create and run scheduled task in interactive session ---
+- name: Create scheduled task to run installer in interactive session
   ansible.windows.win_shell: |
-    $timeout = 60
+    # Remove any previous task
+    Unregister-ScheduledTask -TaskName "PostilionInstall" -Confirm:$false -ErrorAction SilentlyContinue
+
+    # Create task action — run PowerShell with the launcher script
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" `
+      -Argument "-NoProfile -ExecutionPolicy Bypass -File {{ temp_dir }}\postilion_launcher.ps1"
+
+    # Run as the logged-in user with highest privileges (interactive session)
+    $principal = New-ScheduledTaskPrincipal -UserId "{{ ansible_user }}" `
+      -LogonType Interactive -RunLevel Highest
+
+    # Register the task
+    Register-ScheduledTask -TaskName "PostilionInstall" -Action $action -Principal $principal -Force
+
+    # Start it immediately
+    Start-ScheduledTask -TaskName "PostilionInstall"
+    Write-Output "Scheduled task started"
+  when: not postilion_bin_check.stat.exists
+  tags:
+    - install
+
+- name: Display installer launch status
+  ansible.builtin.debug:
+    msg: "Postilion installer launched via scheduled task in interactive desktop session"
+  when: not postilion_bin_check.stat.exists
+  tags:
+    - install
+
+# --- Wait for the scheduled task to complete ---
+- name: Wait for installation to complete (scheduled task)
+  ansible.windows.win_shell: |
+    $timeout = {{ postilion_install_timeout }}
     $elapsed = 0
     while ($elapsed -lt $timeout) {
-        $proc = Get-Process | Where-Object { $_.MainWindowTitle -like "*Realtime Install*" }
-        if ($proc) {
-            Write-Output "Installer window detected"
+        $task = Get-ScheduledTask -TaskName "PostilionInstall" -ErrorAction SilentlyContinue
+        if ($task -and $task.State -eq "Ready") {
+            # Task completed — check the result
+            $info = Get-ScheduledTaskInfo -TaskName "PostilionInstall"
+            Write-Output "Task completed. Last result: $($info.LastTaskResult)"
+
+            # Read AutoIt exit code if available
+            $exitFile = "{{ temp_dir }}\autoit_exitcode.txt"
+            if (Test-Path $exitFile) {
+                $exitCode = Get-Content $exitFile -Raw
+                Write-Output "AutoIt exit code: $exitCode"
+                if ($exitCode.Trim() -eq "0") {
+                    exit 0
+                } else {
+                    exit [int]$exitCode.Trim()
+                }
+            }
             exit 0
         }
-        Start-Sleep -Seconds 2
-        $elapsed += 2
+        Start-Sleep -Seconds 10
+        $elapsed += 10
+
+        # Progress logging every 60 seconds
+        if ($elapsed % 60 -eq 0) {
+            Write-Output "Still waiting... ${elapsed}s elapsed (task state: $($task.State))"
+        }
     }
-    Write-Output "Timeout waiting for installer window"
+    Write-Output "Timeout after ${timeout}s waiting for scheduled task"
     exit 1
-  register: installer_window
-  failed_when: installer_window.rc != 0
+  register: autoit_result
+  timeout: "{{ postilion_install_timeout + 60 }}"
+  failed_when: autoit_result.rc != 0
   when: not postilion_bin_check.stat.exists
   tags:
     - install
 
-# --- Run AutoIt GUI automation script ---
-- name: Run AutoIt GUI automation script
-  ansible.windows.win_command: "{{ autoit_script_dest }}"
-  register: autoit_result
-  timeout: "{{ postilion_install_timeout }}"
-  failed_when: autoit_result.rc != 0
+# --- Clean up the scheduled task ---
+- name: Remove PostilionInstall scheduled task
+  ansible.windows.win_shell: |
+    Unregister-ScheduledTask -TaskName "PostilionInstall" -Confirm:$false -ErrorAction SilentlyContinue
   when: not postilion_bin_check.stat.exists
   tags:
     - install
@@ -144,6 +241,16 @@
   ansible.windows.win_file:
     path: "{{ temp_dir }}\\postilion_install.au3"
     state: absent
+  when:
+    - not postilion_bin_check.stat.exists
+    - cleanup_autoit_script | bool
+  tags:
+    - install
+
+- name: Clean up launcher script and exit code marker
+  ansible.windows.win_shell: |
+    Remove-Item -Path "{{ temp_dir }}\postilion_launcher.ps1" -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "{{ temp_dir }}\autoit_exitcode.txt" -Force -ErrorAction SilentlyContinue
   when:
     - not postilion_bin_check.stat.exists
     - cleanup_autoit_script | bool

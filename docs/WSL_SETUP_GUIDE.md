@@ -189,7 +189,12 @@ From WSL:
 
 ```bash
 source ~/ansible-venv/bin/activate
-cd /mnt/c/Users/lourash/Documents/Lou_Workspace/Postilion_Automation
+
+# If you cloned to WSL home:
+cd ~/Postilion_Automation
+
+# OR if running from the Windows filesystem:
+# cd /mnt/c/Users/lourash/Documents/Lou_Workspace/Postilion_Automation
 
 # Run all 4 phases
 ansible-playbook playbooks/site.yml
@@ -239,12 +244,22 @@ WSL may not resolve Windows hostnames. Use **IP addresses** in `ansible_host` in
 Ensure WSL can reach the target server:
 
 ```bash
+# Bypass proxy for the target server (critical in corporate environments)
+export no_proxy=172.26.42.122
+export NO_PROXY=172.26.42.122
+
+# Add to ~/.bashrc to make permanent:
+echo 'export no_proxy=172.26.42.122' >> ~/.bashrc
+echo 'export NO_PROXY=172.26.42.122' >> ~/.bashrc
+
 # Basic ping test
-ping 192.168.1.100
+ping 172.26.42.122
 
 # WinRM port test (should get 405 or auth error, NOT timeout)
-curl -k https://192.168.1.100:5986/wsman
+curl -k https://172.26.42.122:5986/wsman
 ```
+
+> **Important**: If your WSL uses a corporate proxy, WinRM connections will fail with `Connection refused` unless you add the target IP to `no_proxy` / `NO_PROXY`. This must be set **before** running any `ansible-playbook` commands.
 
 If WSL cannot reach the target, check:
 - WSL networking mode (NAT vs bridged)
