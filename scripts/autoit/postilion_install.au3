@@ -45,6 +45,7 @@ Local $logFile = "C:\logs\postilion_autoit_install.log"
 Local $mainWindow = "Realtime Install Framework"
 Local $popupDirExists = "Directory Exists"
 Local $popupLogonService = "Logon As Service"
+Local $popupAuthError = "Authentication Error"
 Local $popupEventViewer = "Event Viewer"
 
 ; === Exit codes ===
@@ -97,13 +98,59 @@ Func _HandlePopup($title, $buttonText, $waitTime = 0)
         _Log("Popup detected: " & $title)
         WinActivate($title)
         Sleep(500)
+
+        ; Strategy 1: Exact text
         Local $clickResult = ControlClick($title, "", "[TEXT:" & $buttonText & "]")
-        If $clickResult = 0 Then
-            _Log("WARNING: ControlClick failed on popup " & $title & ", trying alternate method")
-            ControlClick($title, "", "[CLASS:Button; INSTANCE:1]")
+        If $clickResult = 1 Then
+            _Log("Popup button clicked via [TEXT:" & $buttonText & "]")
+            Sleep(1000)
+            Return True
         EndIf
+
+        ; Strategy 2: With & accelerator (e.g. &Yes, &No, &OK)
+        $clickResult = ControlClick($title, "", "[TEXT:&" & $buttonText & "]")
+        If $clickResult = 1 Then
+            _Log("Popup button clicked via [TEXT:&" & $buttonText & "]")
+            Sleep(1000)
+            Return True
+        EndIf
+
+        ; Strategy 3: CLASS:Button + text
+        $clickResult = ControlClick($title, "", "[CLASS:Button; TEXT:" & $buttonText & "]")
+        If $clickResult = 1 Then
+            _Log("Popup button clicked via [CLASS:Button; TEXT:" & $buttonText & "]")
+            Sleep(1000)
+            Return True
+        EndIf
+
+        ; Strategy 4: CLASS:Button + text with &
+        $clickResult = ControlClick($title, "", "[CLASS:Button; TEXT:&" & $buttonText & "]")
+        If $clickResult = 1 Then
+            _Log("Popup button clicked via [CLASS:Button; TEXT:&" & $buttonText & "]")
+            Sleep(1000)
+            Return True
+        EndIf
+
+        ; Strategy 5: Scan buttons for matching text
+        For $i = 1 To 6
+            Local $btnText = ControlGetText($title, "", "[CLASS:Button; INSTANCE:" & $i & "]")
+            If @error Then ExitLoop
+            _Log("  Popup button INSTANCE:" & $i & " text='" & $btnText & "'")
+            If StringInStr($btnText, $buttonText) Then
+                $clickResult = ControlClick($title, "", "[CLASS:Button; INSTANCE:" & $i & "]")
+                If $clickResult = 1 Then
+                    _Log("Popup button clicked via INSTANCE:" & $i)
+                    Sleep(1000)
+                    Return True
+                EndIf
+            EndIf
+        Next
+
+        ; Strategy 6: Keyboard fallback
+        _Log("WARNING: All ControlClick failed on popup, trying Enter key")
+        Send("{ENTER}")
         Sleep(1000)
-        _Log("Popup handled: " & $title)
+        _Log("Popup handled via Enter key: " & $title)
         Return True
     EndIf
 
@@ -322,20 +369,24 @@ _ClickNext()
 ; =========================================================================
 _HandleScreen("Screen 5: Data Source", "Realtime Framework Data Source")
 
+; Dump controls to verify Edit INSTANCE mapping
+_Log("Dumping controls on Screen 5 for diagnostics...")
+_DumpControls()
+
 _Log("Setting DB Server: " & $dbServer)
-ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:1]", $dbServer)
+ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:2]", $dbServer)
 Sleep(300)
 
 _Log("Setting DB Port: " & $dbPort)
-ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:2]", $dbPort)
+ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:3]", $dbPort)
 Sleep(300)
 
 _Log("Setting DB Schema: " & $dbSchema)
-ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:3]", $dbSchema)
+ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:4]", $dbSchema)
 Sleep(300)
 
 _Log("Setting DB Name: " & $dbName)
-ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:4]", $dbName)
+ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:5]", $dbName)
 Sleep(300)
 
 _Log("Setting DB Auth: " & $dbAuth)
@@ -344,9 +395,9 @@ Sleep(500)
 
 If $dbAuth = "SQL Server Authentication" Then
     _Log("Setting SQL Auth credentials")
-    ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:5]", $dbLogin)
+    ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:6]", $dbLogin)
     Sleep(300)
-    ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:6]", $dbPassword)
+    ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:7]", $dbPassword)
     Sleep(300)
 EndIf
 
@@ -367,25 +418,25 @@ EndIf
 Sleep(500)
 
 _Log("Setting Database Name: " & $dbName)
-ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:1]", $dbName)
+ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:2]", $dbName)
 Sleep(300)
 
 _Log("Setting Data Device: " & $dbDataDevice)
-ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:2]", $dbDataDevice)
+ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:3]", $dbDataDevice)
 Sleep(300)
 
 Local $dataFilePath = $dbDataPath & "\" & $dbDataDevice & ".mdf"
 _Log("Setting Data Device Path: " & $dataFilePath)
-ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:3]", $dataFilePath)
+ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:4]", $dataFilePath)
 Sleep(300)
 
 _Log("Setting Log Device: " & $dbLogDevice)
-ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:4]", $dbLogDevice)
+ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:5]", $dbLogDevice)
 Sleep(300)
 
 Local $logFilePath = $dbLogPath & "\" & $dbLogDevice & ".ldf"
 _Log("Setting Log Device Path: " & $logFilePath)
-ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:5]", $logFilePath)
+ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:6]", $logFilePath)
 Sleep(300)
 
 _ClickNext()
@@ -396,7 +447,7 @@ _ClickNext()
 _HandleScreen("Screen 7: Services Server", "Services Server")
 
 _Log("Setting Services Server hostname: " & $svcHostname)
-ControlSetText($mainWindow, "Services Server", "[CLASS:Edit; INSTANCE:1]", $svcHostname)
+ControlSetText($mainWindow, "Services Server", "[CLASS:Edit; INSTANCE:2]", $svcHostname)
 Sleep(500)
 _ClickNext()
 
@@ -405,17 +456,27 @@ _ClickNext()
 ; =========================================================================
 _HandleScreen("Screen 8: Service Account", "Service Account")
 
+; Dump controls to verify field mapping
+_Log("Dumping controls on Screen 8 for diagnostics...")
+_DumpControls()
+
+; INSTANCE:1 = description text area (hidden), visible fields start at INSTANCE:2
 _Log("Setting Service Domain: " & $svcDomain)
-ControlSetText($mainWindow, "Service Account", "[CLASS:Edit; INSTANCE:1]", $svcDomain)
+ControlSetText($mainWindow, "Service Account", "[CLASS:Edit; INSTANCE:2]", $svcDomain)
 Sleep(300)
 
 _Log("Setting Service Username: " & $svcUsername)
-ControlSetText($mainWindow, "Service Account", "[CLASS:Edit; INSTANCE:2]", $svcUsername)
+ControlSetText($mainWindow, "Service Account", "[CLASS:Edit; INSTANCE:3]", $svcUsername)
 Sleep(300)
 
 _Log("Setting Service Password: ********")
-ControlSetText($mainWindow, "Service Account", "[CLASS:Edit; INSTANCE:3]", $svcPassword)
+ControlSetText($mainWindow, "Service Account", "[CLASS:Edit; INSTANCE:4]", $svcPassword)
 Sleep(500)
+
+; Verify fields were set correctly
+Local $verifyDomain = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:2]")
+Local $verifyUser = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:3]")
+_Log("Verify — Domain='" & $verifyDomain & "' Username='" & $verifyUser & "'")
 
 _ClickNext()
 
@@ -423,6 +484,13 @@ _ClickNext()
 ; Screen 8a: Logon As Service (CONDITIONAL)
 ; =========================================================================
 _HandlePopup($popupLogonService, "Yes", $popupWait)
+
+; =========================================================================
+; Screen 8b: Authentication Error (CONDITIONAL)
+; The installer may show this if the service account cannot "log on as a
+; service". Click Yes to ignore and continue.
+; =========================================================================
+_HandlePopup($popupAuthError, "Yes", $popupWait)
 
 ; =========================================================================
 ; Screen 9: Default Currency

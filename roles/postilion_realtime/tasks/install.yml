@@ -80,11 +80,17 @@
       while ($elapsed -lt $timeout) {
           Start-Sleep -Seconds 3
           $elapsed += 3
-          # Check for the window using multiple methods
+          # Check for the window — must match the exact installer title, not Notepad etc.
           $procs = Get-Process | Where-Object {
-              $_.MainWindowTitle -like "*Realtime*" -or
-              $_.MainWindowTitle -like "*Install*Framework*" -or
-              $_.MainWindowTitle -like "*Postilion*"
+              $_.MainWindowTitle -eq "Realtime Install Framework"
+          }
+          if (-not $procs) {
+              # Fallback: substring match but exclude Notepad/other apps
+              $procs = Get-Process | Where-Object {
+                  $_.MainWindowTitle -like "*Realtime Install*" -and
+                  $_.ProcessName -ne "notepad" -and
+                  $_.ProcessName -ne "notepad++"
+              }
           }
           if ($procs) {
               $windowFound = $true

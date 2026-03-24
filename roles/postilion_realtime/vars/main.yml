@@ -17,6 +17,7 @@ postilion_license_dir: "{{ postilion_install_dir }}\\realtime\\license"
 autoit_main_window: "Realtime Install Framework"
 autoit_popup_dir_exists: "Directory Exists"
 autoit_popup_logon_service: "Logon As Service"
+autoit_popup_auth_error: "Authentication Error"
 autoit_popup_event_viewer: "Event Viewer"
 
 # Service names to validate
