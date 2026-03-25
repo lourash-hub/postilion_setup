@@ -473,25 +473,65 @@ _Log("Dumping controls on Screen 8 for diagnostics...")
 _DumpControls()
 
 ; INSTANCE:1 = description text area (hidden), visible fields start at INSTANCE:2
-; Domain
-_Log("Setting Service Domain: " & $svcDomain)
-ControlSetText($mainWindow, "Service Account", "[CLASS:Edit; INSTANCE:2]", $svcDomain)
+
+; --- Domain (INSTANCE:2) ---
+_Log("[Screen 8] Setting Domain field (INSTANCE:2) to: " & $svcDomain)
+Local $domResult = ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:2]", $svcDomain)
+_Log("[Screen 8] ControlSetText Domain result: " & $domResult)
 Sleep(300)
 
-; Username
-_Log("Setting Service Username: " & $svcUsername)
-ControlSetText($mainWindow, "Service Account", "[CLASS:Edit; INSTANCE:3]", $svcUsername)
+; --- Username (INSTANCE:3) ---
+_Log("[Screen 8] Setting Username field (INSTANCE:3) to: " & $svcUsername)
+Local $userResult = ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:3]", $svcUsername)
+_Log("[Screen 8] ControlSetText Username result: " & $userResult)
 Sleep(300)
 
-; Password
-_Log("Setting Service Password: ********")
-ControlSetText($mainWindow, "Service Account", "[CLASS:Edit; INSTANCE:4]", $svcPassword)
-Sleep(500)
+; --- Password (INSTANCE:4) ---
+; Password fields often reject ControlSetText, so we try multiple strategies
+_Log("[Screen 8] Setting Password field (INSTANCE:4) to: " & $svcPassword)
+Local $pwResult = ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:4]", $svcPassword)
+_Log("[Screen 8] ControlSetText Password result: " & $pwResult)
+Sleep(300)
 
-; Verify fields were set correctly
-Local $verifyDomain = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:2]")
-Local $verifyUser = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:3]")
-_Log("Verify — Domain='" & $verifyDomain & "' Username='" & $verifyUser & "'")
+; Verify password was set (read back — may return empty for masked fields)
+Local $verifyPw = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:4]")
+_Log("[Screen 8] Password read-back: '" & $verifyPw & "' (length=" & StringLen($verifyPw) & ")")
+
+; If ControlSetText failed or password is empty, use focus + Send fallback
+If $pwResult = 0 Or StringLen($verifyPw) = 0 Then
+    _Log("[Screen 8] Password field empty after ControlSetText — trying ControlFocus + Send")
+    ; Clear the field first
+    ControlFocus($mainWindow, "", "[CLASS:Edit; INSTANCE:4]")
+    Sleep(200)
+    ; Select all existing text and delete
+    Send("^a")
+    Sleep(100)
+    Send("{DELETE}")
+    Sleep(100)
+    ; Type the password
+    Send($svcPassword, 1)  ; flag=1 sends raw characters (no special key interpretation)
+    Sleep(500)
+
+    ; Verify again
+    Local $verifyPw2 = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:4]")
+    _Log("[Screen 8] Password read-back after Send: '" & $verifyPw2 & "' (length=" & StringLen($verifyPw2) & ")")
+
+    If StringLen($verifyPw2) = 0 Then
+        _Log("[Screen 8] WARNING: Password still empty — trying ControlSend")
+        ControlFocus($mainWindow, "", "[CLASS:Edit; INSTANCE:4]")
+        Sleep(200)
+        ControlSend($mainWindow, "", "[CLASS:Edit; INSTANCE:4]", $svcPassword, 1)
+        Sleep(500)
+        Local $verifyPw3 = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:4]")
+        _Log("[Screen 8] Password read-back after ControlSend: '" & $verifyPw3 & "' (length=" & StringLen($verifyPw3) & ")")
+    EndIf
+EndIf
+
+; --- Final verification of all fields ---
+Local $finalDomain = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:2]")
+Local $finalUser = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:3]")
+Local $finalPw = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:4]")
+_Log("[Screen 8] FINAL VERIFY — Domain='" & $finalDomain & "' Username='" & $finalUser & "' Password='" & $finalPw & "' (pw length=" & StringLen($finalPw) & ")")
 
 _ClickNext()
 
