@@ -1,0 +1,41 @@
+---
+# =============================================================================
+# 05_patch_realtime.yml — Install Postilion Realtime Patches
+# =============================================================================
+# Applies patches from D:\Patches in ascending order (oldest first).
+# Completely independent from the base installation playbook.
+#
+# Usage:
+#   ansible-playbook playbooks/05_patch_realtime.yml
+#   ansible-playbook playbooks/05_patch_realtime.yml -e postilion_patches_dir=D:\OtherPatches
+#   ansible-playbook playbooks/05_patch_realtime.yml -e postilion_patches_preview=true
+# =============================================================================
+
+- name: Apply Postilion Realtime Framework Patches
+  hosts: postilion_servers
+  gather_facts: true
+
+  pre_tasks:
+    - name: Display patch deployment information
+      ansible.builtin.debug:
+        msg: |
+          ====================================================
+          POSTILION REALTIME PATCH INSTALLATION
+          ====================================================
+          Target host:      {{ inventory_hostname }}
+          Hostname:         {{ ansible_hostname }}
+          Patches dir:      {{ postilion_patches_dir }}
+          Install dir:      {{ postilion_install_dir }}
+          Manage services:  {{ postilion_patch_manage_services | default(true) }}
+          Preview only:     {{ postilion_patches_preview | default('false') }}
+          ====================================================
+      tags: always
+
+  roles:
+    - role: postilion_patches
+
+  post_tasks:
+    - name: Patch deployment complete
+      ansible.builtin.debug:
+        msg: "Postilion Realtime patch installation finished on {{ inventory_hostname }}"
+      tags: always

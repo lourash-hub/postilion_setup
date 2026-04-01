@@ -683,14 +683,36 @@ For $i = 1 To 10
 Next
 _Log("[Screen 9] Total ComboBox controls: " & $maxCombo & " — currency is at INSTANCE:" & $maxCombo)
 
+; Log current selection before changing
+Local $currentCurrency = ControlGetText($mainWindow, "", "[CLASS:ComboBox; INSTANCE:" & $maxCombo & "]")
+_Log("[Screen 9] Current currency selection: '" & $currentCurrency & "'")
+
+; Log all available items in the ComboBox for diagnostics
+Local $itemCount = ControlCommand($mainWindow, "", "[CLASS:ComboBox; INSTANCE:" & $maxCombo & "]", "GetCount", "")
+_Log("[Screen 9] ComboBox item count: " & $itemCount)
+
 _Log("[Screen 9] Selecting default currency: " & $defaultCurrency)
+
+; Strategy 1: Try SelectString (prefix match)
 Local $currencyResult = ControlCommand($mainWindow, "", "[CLASS:ComboBox; INSTANCE:" & $maxCombo & "]", "SelectString", $defaultCurrency)
-If $currencyResult = 0 Then
-    _Log("WARNING: SelectString failed for currency, trying alternate approach")
-    ControlClick($mainWindow, "", "[CLASS:ComboBox; INSTANCE:" & $maxCombo & "]")
-    Sleep(500)
-    Send($defaultCurrency)
-    Sleep(500)
+Sleep(300)
+Local $afterSelect = ControlGetText($mainWindow, "", "[CLASS:ComboBox; INSTANCE:" & $maxCombo & "]")
+_Log("[Screen 9] After SelectString: result=" & $currencyResult & " current='" & $afterSelect & "'")
+
+; Strategy 2: If SelectString didn't pick the right one, search all items
+If StringInStr($afterSelect, "Naira") = 0 Then
+    _Log("[Screen 9] SelectString didn't match Naira — scanning all items...")
+    For $idx = 0 To $itemCount - 1
+        ControlCommand($mainWindow, "", "[CLASS:ComboBox; INSTANCE:" & $maxCombo & "]", "SetCurrentSelection", $idx)
+        Sleep(50)
+        Local $itemText = ControlGetText($mainWindow, "", "[CLASS:ComboBox; INSTANCE:" & $maxCombo & "]")
+        If StringInStr($itemText, "Naira") Then
+            _Log("[Screen 9] Found Naira at index " & $idx & ": '" & $itemText & "'")
+            ExitLoop
+        EndIf
+    Next
+    Local $finalCurrency = ControlGetText($mainWindow, "", "[CLASS:ComboBox; INSTANCE:" & $maxCombo & "]")
+    _Log("[Screen 9] Final currency: '" & $finalCurrency & "'")
 EndIf
 Sleep(500)
 _ClickNext()

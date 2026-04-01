@@ -1,0 +1,9 @@
+---
+# =============================================================================
+# Role entry point — Postilion Realtime Patch Installation
+# =============================================================================
+
+- name: Run patch installation
+  ansible.builtin.import_tasks: patch.yml
+  tags:
+    - patch

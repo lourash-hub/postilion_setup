@@ -9,6 +9,10 @@
 #   ansible-playbook playbooks/site.yml --tags extract
 #   ansible-playbook playbooks/site.yml --tags install
 #   ansible-playbook playbooks/site.yml --tags validate
+#   ansible-playbook playbooks/site.yml --tags patch
+#
+#   Or run patches separately:
+#   ansible-playbook playbooks/05_patch_realtime.yml
 # =============================================================================
 
 - name: Deploy Postilion Realtime Framework v5.6
@@ -33,6 +37,7 @@
 
   roles:
     - role: postilion_realtime
+    - role: postilion_patches
 
   post_tasks:
     - name: Deployment complete

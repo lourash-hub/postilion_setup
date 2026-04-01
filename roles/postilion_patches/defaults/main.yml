@@ -1,0 +1,27 @@
+---
+# =============================================================================
+# Role defaults for postilion_patches
+# =============================================================================
+
+# Where patches are stored on the target server
+postilion_patches_dir: "D:\\Patches"
+
+# Postilion install directory (must match the install role)
+postilion_install_dir: "C:\\Postilion"
+
+# Response file settings
+postilion_patches_use_filter: "false"
+postilion_patches_preview: "false"
+
+# Timeout for patch installer (seconds) — patches can take a while
+postilion_patch_timeout: 1800
+
+# Temp and log directories
+temp_dir: "C:\\temp"
+log_dir: "C:\\logs"
+
+# Whether to stop/start Postilion services around patching
+postilion_patch_manage_services: true
+
+# Cleanup temp files after patching
+postilion_patch_cleanup: true

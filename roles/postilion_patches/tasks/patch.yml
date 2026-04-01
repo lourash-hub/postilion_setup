@@ -1,0 +1,308 @@
+---
+# =============================================================================
+# Postilion Realtime Patch Installation
+# Installs patches in ascending order (oldest first) using PatchInstaller
+# with a response file for silent/automated patching.
+#
+# Supports both .exe patch files and .zip archives that need extraction.
+# =============================================================================
+
+# --- Validate prerequisites ---
+- name: Ensure Postilion is installed
+  ansible.windows.win_stat:
+    path: "{{ postilion_install_dir }}\\realtime"
+  register: postilion_realtime_check
+  tags:
+    - patch
+
+- name: Fail if Postilion is not installed
+  ansible.builtin.fail:
+    msg: >-
+      Postilion Realtime is not installed at {{ postilion_install_dir }}\realtime.
+      Run the installation playbook first.
+  when: not postilion_realtime_check.stat.exists
+  tags:
+    - patch
+
+# --- Ensure directories exist ---
+- name: Ensure log directory exists
+  ansible.windows.win_file:
+    path: "{{ log_dir }}"
+    state: directory
+  tags:
+    - patch
+
+- name: Ensure temp directory exists
+  ansible.windows.win_file:
+    path: "{{ temp_dir }}"
+    state: directory
+  tags:
+    - patch
+
+# --- Check patches directory ---
+- name: Check if patches directory exists
+  ansible.windows.win_stat:
+    path: "{{ postilion_patches_dir }}"
+  register: patches_dir_check
+  tags:
+    - patch
+
+- name: Fail if patches directory does not exist
+  ansible.builtin.fail:
+    msg: "Patches directory {{ postilion_patches_dir }} does not exist on target."
+  when: not patches_dir_check.stat.exists
+  tags:
+    - patch
+
+# --- Extract any .zip patch archives first ---
+- name: Find zip archives in patches directory
+  ansible.windows.win_find:
+    paths: "{{ postilion_patches_dir }}"
+    patterns: "RealtimeFramework_v5.6_patch*.zip"
+    file_type: file
+  register: patch_zips
+  tags:
+    - patch
+
+- name: Extract zip patch archives
+  ansible.windows.win_shell: |
+    $zipFile = '{{ item.path }}'
+    $extractDir = '{{ postilion_patches_dir }}'
+    Write-Output "Extracting: $zipFile -> $extractDir"
+    Expand-Archive -Path $zipFile -DestinationPath $extractDir -Force
+    Write-Output "Extracted: $zipFile"
+  loop: "{{ patch_zips.files | sort(attribute='filename') }}"
+  loop_control:
+    label: "{{ item.filename }}"
+  when: patch_zips.matched | default(0) > 0
+  register: zip_extract_results
+  tags:
+    - patch
+
+- name: Display zip extraction results
+  ansible.builtin.debug:
+    msg: "Extracted {{ patch_zips.matched | default(0) }} zip archive(s)"
+  when: patch_zips.matched | default(0) > 0
+  tags:
+    - patch
+
+# --- Discover patch .exe files (after extraction) ---
+- name: Find all patch executables in patches directory
+  ansible.windows.win_find:
+    paths: "{{ postilion_patches_dir }}"
+    patterns: "RealtimeFramework_v5.6_patch*.exe"
+    file_type: file
+    recurse: true
+  register: patch_files
+  tags:
+    - patch
+
+- name: Display discovered patches (sorted ascending)
+  ansible.builtin.debug:
+    msg: |
+      Found {{ patch_files.matched | default(0) }} patch(es):
+      {{ patch_files.files | sort(attribute='filename') | map(attribute='filename') | list | to_nice_yaml }}
+  tags:
+    - patch
+
+- name: Skip patching if no patches found
+  ansible.builtin.debug:
+    msg: "No patch executables found in {{ postilion_patches_dir }}. Nothing to do."
+  when: patch_files.matched | default(0) == 0
+  tags:
+    - patch
+
+# --- Locate the PatchInstaller ---
+- name: Find PatchInstaller executable
+  ansible.windows.win_find:
+    paths: "{{ postilion_install_dir }}\\realtime"
+    patterns: "PatchInstaller*.exe"
+    recurse: true
+    file_type: file
+  register: patch_installer_search
+  when: patch_files.matched | default(0) > 0
+  tags:
+    - patch
+
+- name: Set PatchInstaller path
+  ansible.builtin.set_fact:
+    postilion_patch_installer_exe: "{{ patch_installer_search.files[0].path }}"
+  when:
+    - patch_files.matched | default(0) > 0
+    - patch_installer_search.files is defined
+    - patch_installer_search.files | length > 0
+  tags:
+    - patch
+
+- name: Fail if PatchInstaller not found
+  ansible.builtin.fail:
+    msg: >-
+      PatchInstaller executable not found under {{ postilion_install_dir }}\realtime.
+      Ensure Postilion Realtime is properly installed.
+  when:
+    - patch_files.matched | default(0) > 0
+    - patch_installer_search.files | default([]) | length == 0
+  tags:
+    - patch
+
+- name: Display PatchInstaller location
+  ansible.builtin.debug:
+    msg: "PatchInstaller: {{ postilion_patch_installer_exe }}"
+  when: postilion_patch_installer_exe is defined
+  tags:
+    - patch
+
+# --- Generate response file ---
+- name: Generate patch installer response file
+  ansible.windows.win_template:
+    src: response_file_patchinstaller.xml.j2
+    dest: "{{ temp_dir }}\\response_file_patchinstaller.xml"
+  when: patch_files.matched | default(0) > 0
+  tags:
+    - patch
+
+# --- Stop Postilion services before patching ---
+- name: Stop Postilion services before patching
+  ansible.windows.win_shell: |
+    $services = Get-Service -DisplayName "Postilion*" -ErrorAction SilentlyContinue
+    if ($services) {
+        foreach ($svc in $services) {
+            if ($svc.Status -eq 'Running') {
+                Write-Output "Stopping service: $($svc.DisplayName) ($($svc.Name))"
+                Stop-Service -Name $svc.Name -Force -ErrorAction SilentlyContinue
+                Write-Output "Stopped: $($svc.Name)"
+            }
+        }
+    } else {
+        Write-Output "No Postilion services found."
+    }
+  register: stop_services_result
+  when:
+    - patch_files.matched | default(0) > 0
+    - postilion_patch_manage_services | default(true)
+  tags:
+    - patch
+
+- name: Display service stop result
+  ansible.builtin.debug:
+    msg: "{{ stop_services_result.stdout_lines | default(['No output']) }}"
+  when: stop_services_result is changed or stop_services_result is defined
+  tags:
+    - patch
+
+# --- Install patches in ascending order ---
+- name: Install patches in ascending order
+  ansible.windows.win_shell: |
+    $patchInstaller = '{{ postilion_patch_installer_exe }}'
+    $responseFile = '{{ temp_dir }}\response_file_patchinstaller.xml'
+    $patchName = '{{ item.filename }}'
+    $patchDir = '{{ item.path | win_dirname }}'
+    $logFile = '{{ log_dir }}\patch_{{ item.filename | regex_replace("\.exe$", "") }}.log'
+
+    Write-Output "=============================================="
+    Write-Output "Installing patch: $patchName"
+    Write-Output "Patch directory:  $patchDir"
+    Write-Output "Log file:         $logFile"
+    Write-Output "=============================================="
+
+    # Update the response file to point to this patch's directory
+    $responseContent = Get-Content $responseFile -Raw
+    # The response file already has the patches.dir set, but if
+    # patches are in subdirectories after extraction, override it
+    $updatedResponse = $responseContent -replace 'value="[^"]*"(\s*/>)', "value=`"$patchDir`"`$1"
+
+    # Write a per-patch response file
+    $perPatchResponse = '{{ temp_dir }}\response_patch_current.xml'
+    Set-Content -Path $perPatchResponse -Value $updatedResponse
+
+    # Run PatchInstaller
+    $process = Start-Process -FilePath $patchInstaller `
+        -ArgumentList "-response", $perPatchResponse `
+        -Wait -PassThru -NoNewWindow `
+        -RedirectStandardOutput $logFile `
+        -RedirectStandardError "{{ log_dir }}\patch_error_{{ item.filename | regex_replace('\.exe$', '') }}.log"
+
+    Write-Output "Exit code: $($process.ExitCode)"
+
+    if (Test-Path $logFile) {
+        Write-Output "--- Log tail ---"
+        Get-Content $logFile -Tail 15
+        Write-Output "--- End log ---"
+    }
+
+    if ($process.ExitCode -ne 0) {
+        Write-Error "Patch $patchName failed with exit code: $($process.ExitCode)"
+        exit $process.ExitCode
+    }
+
+    Write-Output "Patch $patchName installed successfully."
+  loop: "{{ patch_files.files | sort(attribute='filename') }}"
+  loop_control:
+    label: "{{ item.filename }}"
+  register: patch_results
+  timeout: "{{ postilion_patch_timeout }}"
+  when:
+    - patch_files.matched | default(0) > 0
+    - postilion_patch_installer_exe is defined
+  tags:
+    - patch
+
+# --- Display patch results summary ---
+- name: Display patch installation summary
+  ansible.builtin.debug:
+    msg: |
+      Patch installation complete.
+      Total patches processed: {{ patch_files.matched | default(0) }}
+      {% for result in patch_results.results | default([]) %}
+      - {{ result.item.filename }}: {{ 'SUCCESS' if result.rc | default(0) == 0 else 'FAILED (rc=' ~ result.rc ~ ')' }}
+      {% endfor %}
+  when: patch_results is defined
+  tags:
+    - patch
+
+# --- Restart Postilion services after patching ---
+- name: Start Postilion services after patching
+  ansible.windows.win_shell: |
+    $services = Get-Service -DisplayName "Postilion*" -ErrorAction SilentlyContinue
+    if ($services) {
+        foreach ($svc in $services) {
+            if ($svc.Status -ne 'Running') {
+                Write-Output "Starting service: $($svc.DisplayName) ($($svc.Name))"
+                Start-Service -Name $svc.Name -ErrorAction SilentlyContinue
+                Write-Output "Started: $($svc.Name)"
+            }
+        }
+    } else {
+        Write-Output "No Postilion services found."
+    }
+  register: start_services_result
+  when:
+    - patch_files.matched | default(0) > 0
+    - postilion_patch_manage_services | default(true)
+  tags:
+    - patch
+
+- name: Display service start result
+  ansible.builtin.debug:
+    msg: "{{ start_services_result.stdout_lines | default(['No output']) }}"
+  when: start_services_result is changed or start_services_result is defined
+  tags:
+    - patch
+
+# --- Cleanup ---
+- name: Remove temporary response files
+  ansible.windows.win_file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ temp_dir }}\\response_file_patchinstaller.xml"
+    - "{{ temp_dir }}\\response_patch_current.xml"
+  when: postilion_patch_cleanup | default(true)
+  tags:
+    - patch
+
+- name: Patch phase complete
+  ansible.builtin.debug:
+    msg: "Postilion patch installation phase completed successfully."
+  tags:
+    - patch

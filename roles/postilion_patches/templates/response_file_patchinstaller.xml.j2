@@ -1,0 +1,40 @@
+<project>
+
+	<!--
+		PATCHES DIR
+		===========
+
+		INDICATES THE DIRECTORY WHERE PATCHES TO BE INSTALLED
+		ARE TO BE FOUND.
+
+		 1. value - a path to a directory
+		 e.g /tmp/patches, C:\temp\patches
+	-->
+
+	<property name="patches.dir" value="{{ postilion_patches_dir }}" />
+
+	<!--
+		USE FILTER FILES ?
+		==================
+
+		INDICATES WHETHER OR NOT FILTER FILES LOCATED IN THE PATCH DIRECTORY
+		SHOULD BE CONSIDERED WHEN THE PATCH INSTALLER DETERMINES WHICH PATCHES TO
+		INSTALL.
+
+		 1. value - "true" or "false"
+	-->
+
+	<property name="use.filter.files" value="{{ postilion_patches_use_filter | default('false') }}" />
+
+	<!--
+		PATCH PREVIEW ?
+		===============
+
+		INDICATES WHETHER ONLY A LIST OF APPLICABLE PATCHES SHOULD BE GENERATED FOR REVIEW.
+
+		 1. value - "true" or "false"
+	-->
+
+	<property name="patches.preview" value="{{ postilion_patches_preview | default('false') }}" />
+
+</project>
