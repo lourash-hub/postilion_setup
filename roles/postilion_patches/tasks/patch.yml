@@ -195,9 +195,12 @@
   ansible.windows.win_shell: |
     $patchInstaller = '{{ postilion_patch_installer_exe }}'
     $responseFile = '{{ temp_dir }}\response_file_patchinstaller.xml'
-    $patchName = '{{ item.filename }}'
-    $patchDir = '{{ item.path | win_dirname }}'
-    $logFile = '{{ log_dir }}\patch_{{ item.filename | regex_replace("\.exe$", "") }}.log'
+    $patchFullPath = '{{ item.path }}'
+    $patchName = Split-Path $patchFullPath -Leaf
+    $patchDir = Split-Path $patchFullPath -Parent
+    $patchBaseName = $patchName -replace '\.exe$', ''
+    $logFile = '{{ log_dir }}\patch_' + $patchBaseName + '.log'
+    $errorLogFile = '{{ log_dir }}\patch_error_' + $patchBaseName + '.log'
 
     Write-Output "=============================================="
     Write-Output "Installing patch: $patchName"
@@ -207,8 +210,6 @@
 
     # Update the response file to point to this patch's directory
     $responseContent = Get-Content $responseFile -Raw
-    # The response file already has the patches.dir set, but if
-    # patches are in subdirectories after extraction, override it
     $updatedResponse = $responseContent -replace 'value="[^"]*"(\s*/>)', "value=`"$patchDir`"`$1"
 
     # Write a per-patch response file
@@ -220,7 +221,7 @@
         -ArgumentList "-response", $perPatchResponse `
         -Wait -PassThru -NoNewWindow `
         -RedirectStandardOutput $logFile `
-        -RedirectStandardError "{{ log_dir }}\patch_error_{{ item.filename | regex_replace('\.exe$', '') }}.log"
+        -RedirectStandardError $errorLogFile
 
     Write-Output "Exit code: $($process.ExitCode)"
 
@@ -250,12 +251,10 @@
 # --- Display patch results summary ---
 - name: Display patch installation summary
   ansible.builtin.debug:
-    msg: |
+    msg: >-
       Patch installation complete.
-      Total patches processed: {{ patch_files.matched | default(0) }}
-      {% for result in patch_results.results | default([]) %}
-      - {{ result.item.filename }}: {{ 'SUCCESS' if result.rc | default(0) == 0 else 'FAILED (rc=' ~ result.rc ~ ')' }}
-      {% endfor %}
+      Total patches processed: {{ patch_files.matched | default(0) }}.
+      Check individual patch logs in {{ log_dir }} for details.
   when: patch_results is defined
   tags:
     - patch
