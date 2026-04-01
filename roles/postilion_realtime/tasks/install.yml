@@ -27,11 +27,41 @@
   tags:
     - install
 
-# --- Copy compiled AutoIt script ---
-- name: Copy compiled AutoIt script to target
+# --- Copy AutoIt3 interpreter OR compiled script ---
+# Prefer AutoIt3.exe + template .au3 so Ansible variables are used.
+# Fall back to compiled .exe if AutoIt3.exe is not available.
+- name: Check if AutoIt3.exe interpreter is available
+  ansible.builtin.stat:
+    path: "{{ role_path }}/files/AutoIt3.exe"
+  delegate_to: localhost
+  register: autoit_interpreter_check
+  when: not postilion_bin_check.stat.exists
+  tags:
+    - install
+
+- name: Copy AutoIt3 interpreter to target
+  ansible.windows.win_copy:
+    src: AutoIt3.exe
+    dest: "{{ temp_dir }}\\AutoIt3.exe"
+  when:
+    - not postilion_bin_check.stat.exists
+    - autoit_interpreter_check.stat.exists | default(false)
+  tags:
+    - install
+
+- name: Copy compiled AutoIt script to target (fallback)
   ansible.windows.win_copy:
     src: postilion_install.exe
     dest: "{{ autoit_script_dest }}"
+  when:
+    - not postilion_bin_check.stat.exists
+    - not (autoit_interpreter_check.stat.exists | default(false))
+  tags:
+    - install
+
+- name: Set AutoIt execution method fact
+  ansible.builtin.set_fact:
+    autoit_use_interpreter: "{{ autoit_interpreter_check.stat.exists | default(false) }}"
   when: not postilion_bin_check.stat.exists
   tags:
     - install
@@ -107,8 +137,16 @@
       Start-Sleep -Seconds 5
 
       # Launch AutoIt automation
+      # Use interpreter + template .au3 if available, otherwise compiled .exe
+      {% if autoit_use_interpreter | default(false) %}
+      $autoitExe = "{{ temp_dir }}\AutoIt3.exe"
+      $autoitArg = "{{ temp_dir }}\postilion_install.au3"
+      Add-Content -Path $logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [LAUNCHER] Starting AutoIt: $autoitExe $autoitArg"
+      $autoit = Start-Process -FilePath $autoitExe -ArgumentList $autoitArg -Wait -PassThru
+      {% else %}
       Add-Content -Path $logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [LAUNCHER] Starting AutoIt script: {{ autoit_script_dest }}"
       $autoit = Start-Process -FilePath "{{ autoit_script_dest }}" -Wait -PassThru
+      {% endif %}
       Add-Content -Path $logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [LAUNCHER] AutoIt finished with exit code: $($autoit.ExitCode)"
 
       # Write exit code to a marker file for Ansible to read
@@ -246,6 +284,16 @@
 - name: Clean up generated AutoIt source
   ansible.windows.win_file:
     path: "{{ temp_dir }}\\postilion_install.au3"
+    state: absent
+  when:
+    - not postilion_bin_check.stat.exists
+    - cleanup_autoit_script | bool
+  tags:
+    - install
+
+- name: Clean up AutoIt3 interpreter
+  ansible.windows.win_file:
+    path: "{{ temp_dir }}\\AutoIt3.exe"
     state: absent
   when:
     - not postilion_bin_check.stat.exists

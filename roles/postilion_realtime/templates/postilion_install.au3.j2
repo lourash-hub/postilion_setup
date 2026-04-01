@@ -276,8 +276,8 @@ Func _DumpControls()
         Local $handle = ControlGetHandle($mainWindow, "", "[CLASS:Button; INSTANCE:" & $i & "]")
         _Log("  Button INSTANCE:" & $i & " text='" & $text & "' handle=" & $handle)
     Next
-    ; Dump Edit controls
-    For $i = 1 To 10
+    ; Dump Edit controls — extended to 25 to catch all screens' fields
+    For $i = 1 To 25
         Local $text2 = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $i & "]")
         If @error Then ExitLoop
         _Log("  Edit INSTANCE:" & $i & " text='" & $text2 & "'")
@@ -295,6 +295,61 @@ Func _DumpControls()
         _Log("  Static INSTANCE:" & $i & " text='" & StringLeft($text4, 80) & "'")
     Next
     _Log("--- End control dump ---")
+EndFunc
+
+; =============================================================================
+; Count total visible Edit controls in the main window.
+; Returns the highest INSTANCE number that responds without error.
+; =============================================================================
+Func _CountEdits()
+    Local $count = 0
+    For $i = 1 To 30
+        ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $i & "]")
+        If @error Then ExitLoop
+        $count = $i
+    Next
+    Return $count
+EndFunc
+
+; =============================================================================
+; Find Edit controls that belong to the CURRENT screen page.
+; The wizard retains all previous screens' Edit controls in memory.
+; This function finds Edit instances above a given starting index.
+; =============================================================================
+Func _FindEditInstance($startFrom, $expectedValue)
+    For $i = $startFrom To 30
+        Local $text = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $i & "]")
+        If @error Then ExitLoop
+        If $expectedValue = "" And StringLen($text) = 0 Then
+            _Log("  Found empty Edit at INSTANCE:" & $i)
+            Return $i
+        ElseIf StringInStr($text, $expectedValue) Then
+            _Log("  Found Edit with '" & $expectedValue & "' at INSTANCE:" & $i)
+            Return $i
+        EndIf
+    Next
+    Return 0
+EndFunc
+
+; =============================================================================
+; Set a field value using Tab navigation from the active control.
+; =============================================================================
+Func _TabSetField($value, $fieldName, $useRawSend = False)
+    _Log("  Tab-setting field '" & $fieldName & "' to: " & $value)
+    Send("^a")
+    Sleep(50)
+    If $useRawSend Then
+        Send($value, 1)
+    Else
+        Send($value)
+    EndIf
+    Sleep(200)
+    _Log("  Field '" & $fieldName & "' typed OK")
+EndFunc
+
+Func _TabNext()
+    Send("{TAB}")
+    Sleep(200)
 EndFunc
 
 ; =============================================================================
@@ -371,38 +426,48 @@ _HandleScreen("Screen 5: Data Source", "Realtime Framework Data Source")
 _Log("Dumping controls on Screen 5 for diagnostics...")
 _DumpControls()
 
-; INSTANCE:1 = description text area (hidden), visible fields start at INSTANCE:2
-; Server name
-_Log("Setting DB Server: " & $dbServer)
-ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:2]", $dbServer)
+; From the control dump, the DB fields on Screen 5 are at INSTANCE:6-9
+; (INSTANCE:1-5 are from previous screens: license path, disk info, etc.)
+; Verified from actual dump data:
+;   INSTANCE:6 = DB Server (pre-filled with computer name)
+;   INSTANCE:7 = Port (pre-filled 1433)
+;   INSTANCE:8 = Schema (pre-filled dbo)
+;   INSTANCE:9 = DB Name (pre-filled realtime)
+;   INSTANCE:10 = SQL login (empty)
+
+_Log("[Screen 5] Setting DB Server (INSTANCE:6): " & $dbServer)
+ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:6]", $dbServer)
 Sleep(300)
 
-; Port
-_Log("Setting DB Port: " & $dbPort)
-ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:3]", $dbPort)
+_Log("[Screen 5] Setting DB Port (INSTANCE:7): " & $dbPort)
+ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:7]", $dbPort)
 Sleep(300)
 
-; Schema
-_Log("Setting DB Schema: " & $dbSchema)
-ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:4]", $dbSchema)
+_Log("[Screen 5] Setting DB Schema (INSTANCE:8): " & $dbSchema)
+ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:8]", $dbSchema)
 Sleep(300)
 
-; Database name
-_Log("Setting DB Name: " & $dbName)
-ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:5]", $dbName)
+_Log("[Screen 5] Setting DB Name (INSTANCE:9): " & $dbName)
+ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:9]", $dbName)
 Sleep(300)
 
-; Authentication method
-_Log("Setting DB Auth: " & $dbAuth)
-ControlCommand($mainWindow, "Realtime Framework Data Source", "[CLASS:ComboBox; INSTANCE:1]", "SelectString", $dbAuth)
+; Verify Screen 5 writes
+Local $vS5_1 = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:6]")
+Local $vS5_2 = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:7]")
+Local $vS5_3 = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:8]")
+Local $vS5_4 = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:9]")
+_Log("[Screen 5] Verify: Server='" & $vS5_1 & "' Port='" & $vS5_2 & "' Schema='" & $vS5_3 & "' DBName='" & $vS5_4 & "'")
+
+_Log("[Screen 5] Setting DB Auth: " & $dbAuth)
+ControlCommand($mainWindow, "", "[CLASS:ComboBox; INSTANCE:2]", "SelectString", $dbAuth)
 Sleep(500)
 
-; If SQL Server Authentication, fill login and password
 If $dbAuth = "SQL Server Authentication" Then
-    _Log("Setting SQL Auth credentials")
-    ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:6]", $dbLogin)
+    _Log("[Screen 5] Setting SQL Auth credentials")
+    ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:10]", $dbLogin)
     Sleep(300)
-    ControlSetText($mainWindow, "Realtime Framework Data Source", "[CLASS:Edit; INSTANCE:7]", $dbPassword)
+    ; SQL password field may be INSTANCE:11 when visible
+    ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:11]", $dbPassword)
     Sleep(300)
 EndIf
 
@@ -413,41 +478,54 @@ _ClickNext()
 ; =========================================================================
 _HandleScreen("Screen 6: Database Details", "Realtime Framework Database")
 
-; Select Local database server (default)
+; Dump controls for diagnostics
+_Log("Dumping controls on Screen 6 for diagnostics...")
+_DumpControls()
+
+; Count total Edit controls to find where Screen 6's fields start
+Local $editCountS6 = _CountEdits()
+_Log("[Screen 6] Total Edit controls: " & $editCountS6)
+
+; Screen 6 adds 5 Edit fields for database file configuration:
+;   DB Name, Data Device, Data File Path, Log Device, Log File Path
+; These are the LAST 5 Edit controls on this screen.
+Local $dbNameInst6 = $editCountS6 - 4
+Local $dataDevInst = $editCountS6 - 3
+Local $dataPathInst = $editCountS6 - 2
+Local $logDevInst = $editCountS6 - 1
+Local $logPathInst = $editCountS6
+
+_Log("[Screen 6] Calculated field instances: DBName=" & $dbNameInst6 & " DataDev=" & $dataDevInst & " DataPath=" & $dataPathInst & " LogDev=" & $logDevInst & " LogPath=" & $logPathInst)
+
 If $dbLocation = "local" Then
-    _Log("Selecting Local database server")
-    ControlClick($mainWindow, "Realtime Framework Database", "[TEXT:Local database server]")
+    _Log("[Screen 6] Selecting Local database server")
+    ControlClick($mainWindow, "", "[TEXT:Local database server]")
 Else
-    _Log("Selecting Remote database server")
-    ControlClick($mainWindow, "Realtime Framework Database", "[TEXT:Remote database server]")
+    _Log("[Screen 6] Selecting Remote database server")
+    ControlClick($mainWindow, "", "[TEXT:Remote database server]")
 EndIf
 Sleep(500)
 
-; Database name
-_Log("Setting Database Name: " & $dbName)
-ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:2]", $dbName)
+_Log("[Screen 6] Setting Database Name (INSTANCE:" & $dbNameInst6 & "): " & $dbName)
+ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $dbNameInst6 & "]", $dbName)
 Sleep(300)
 
-; Data Device Name
-_Log("Setting Data Device: " & $dbDataDevice)
-ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:3]", $dbDataDevice)
+_Log("[Screen 6] Setting Data Device (INSTANCE:" & $dataDevInst & "): " & $dbDataDevice)
+ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $dataDevInst & "]", $dbDataDevice)
 Sleep(300)
 
-; Data Device Filename (path)
 Local $dataFilePath = $dbDataPath & "\" & $dbDataDevice & ".mdf"
-_Log("Setting Data Device Path: " & $dataFilePath)
-ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:4]", $dataFilePath)
+_Log("[Screen 6] Setting Data File Path (INSTANCE:" & $dataPathInst & "): " & $dataFilePath)
+ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $dataPathInst & "]", $dataFilePath)
 Sleep(300)
 
-; Log Device Name
-_Log("Setting Log Device: " & $dbLogDevice)
-ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:5]", $dbLogDevice)
+_Log("[Screen 6] Setting Log Device (INSTANCE:" & $logDevInst & "): " & $dbLogDevice)
+ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $logDevInst & "]", $dbLogDevice)
 Sleep(300)
 
-; Log Device Filename (path)
 Local $logFilePath = $dbLogPath & "\" & $dbLogDevice & ".ldf"
-_Log("Setting Log Device Path: " & $logFilePath)
-ControlSetText($mainWindow, "Realtime Framework Database", "[CLASS:Edit; INSTANCE:6]", $logFilePath)
+_Log("[Screen 6] Setting Log File Path (INSTANCE:" & $logPathInst & "): " & $logFilePath)
+ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $logPathInst & "]", $logFilePath)
 Sleep(300)
 
 _ClickNext()
@@ -457,10 +535,22 @@ _ClickNext()
 ; =========================================================================
 _HandleScreen("Screen 7: Services Server", "Services Server")
 
-; Verify/set hostname
-_Log("Setting Services Server hostname: " & $svcHostname)
-ControlSetText($mainWindow, "Services Server", "[CLASS:Edit; INSTANCE:2]", $svcHostname)
+; Dump controls for diagnostics
+_Log("Dumping controls on Screen 7 for diagnostics...")
+_DumpControls()
+
+; Count total Edit controls — Screen 7 adds 1 Edit for hostname (the last one)
+Local $editCountS7 = _CountEdits()
+_Log("[Screen 7] Total Edit controls: " & $editCountS7 & " — hostname is at INSTANCE:" & $editCountS7)
+
+_Log("[Screen 7] Setting Services Server hostname (INSTANCE:" & $editCountS7 & "): " & $svcHostname)
+ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $editCountS7 & "]", $svcHostname)
 Sleep(500)
+
+; Verify write
+Local $verifyHost = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $editCountS7 & "]")
+_Log("[Screen 7] Hostname verify: '" & $verifyHost & "'")
+
 _ClickNext()
 
 ; =========================================================================
@@ -468,69 +558,89 @@ _ClickNext()
 ; =========================================================================
 _HandleScreen("Screen 8: Service Account", "Service Account")
 
-; Dump controls to verify field mapping
+; Dump controls to verify field mapping (extended to INSTANCE:25)
 _Log("Dumping controls on Screen 8 for diagnostics...")
 _DumpControls()
 
-; INSTANCE:1 = description text area (hidden), visible fields start at INSTANCE:2
+; =========================================================================
+; CRITICAL: The wizard keeps ALL Edit controls from ALL previous screens.
+; Edit INSTANCE:1-10+ are from Screens 2-7. Screen 8's Domain/Username/
+; Password fields are at higher INSTANCE numbers (11+).
+; We dynamically find the total Edit count and use the last 3.
+; =========================================================================
 
-; --- Domain (INSTANCE:2) ---
-_Log("[Screen 8] Setting Domain field (INSTANCE:2) to: " & $svcDomain)
-Local $domResult = ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:2]", $svcDomain)
-_Log("[Screen 8] ControlSetText Domain result: " & $domResult)
+_Log("[Screen 8] Values: Domain='" & $svcDomain & "' Username='" & $svcUsername & "' Password='" & $svcPassword & "'")
+
+; Make sure the main window is active and focused
+WinActivate($mainWindow)
+Sleep(500)
+
+; First, find the highest Edit INSTANCE that exists
+Local $maxEdit = _CountEdits()
+_Log("[Screen 8] Total Edit controls found: " & $maxEdit)
+
+; Screen 8 adds 3 fields (Domain, Username, Password) at the end
+; So they should be at maxEdit-2, maxEdit-1, maxEdit
+Local $domainInstance = $maxEdit - 2
+Local $usernameInstance = $maxEdit - 1
+Local $passwordInstance = $maxEdit
+
+_Log("[Screen 8] Calculated field instances: Domain=" & $domainInstance & " Username=" & $usernameInstance & " Password=" & $passwordInstance)
+
+; Read current values before setting
+Local $preDomain = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $domainInstance & "]")
+Local $preUser = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $usernameInstance & "]")
+Local $prePw = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $passwordInstance & "]")
+_Log("[Screen 8] Pre-set values: Domain='" & $preDomain & "' Username='" & $preUser & "' Password='" & $prePw & "' (pw length=" & StringLen($prePw) & ")")
+
+; --- Set Domain ---
+_Log("[Screen 8] Setting Domain (INSTANCE:" & $domainInstance & ") to: " & $svcDomain)
+ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $domainInstance & "]", $svcDomain)
 Sleep(300)
 
-; --- Username (INSTANCE:3) ---
-_Log("[Screen 8] Setting Username field (INSTANCE:3) to: " & $svcUsername)
-Local $userResult = ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:3]", $svcUsername)
-_Log("[Screen 8] ControlSetText Username result: " & $userResult)
+; --- Set Username ---
+_Log("[Screen 8] Setting Username (INSTANCE:" & $usernameInstance & ") to: " & $svcUsername)
+ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $usernameInstance & "]", $svcUsername)
 Sleep(300)
 
-; --- Password (INSTANCE:4) ---
-; Password fields often reject ControlSetText, so we try multiple strategies
-_Log("[Screen 8] Setting Password field (INSTANCE:4) to: " & $svcPassword)
-Local $pwResult = ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:4]", $svcPassword)
+; --- Set Password (try ControlSetText first, then Send fallback) ---
+_Log("[Screen 8] Setting Password (INSTANCE:" & $passwordInstance & ") to: " & $svcPassword)
+Local $pwResult = ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $passwordInstance & "]", $svcPassword)
 _Log("[Screen 8] ControlSetText Password result: " & $pwResult)
 Sleep(300)
 
-; Verify password was set (read back — may return empty for masked fields)
-Local $verifyPw = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:4]")
+; Read back to verify
+Local $verifyPw = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $passwordInstance & "]")
 _Log("[Screen 8] Password read-back: '" & $verifyPw & "' (length=" & StringLen($verifyPw) & ")")
 
-; If ControlSetText failed or password is empty, use focus + Send fallback
-If $pwResult = 0 Or StringLen($verifyPw) = 0 Then
-    _Log("[Screen 8] Password field empty after ControlSetText — trying ControlFocus + Send")
-    ; Clear the field first
-    ControlFocus($mainWindow, "", "[CLASS:Edit; INSTANCE:4]")
+; If password is empty, fall back to ControlFocus + Send
+If StringLen($verifyPw) = 0 Then
+    _Log("[Screen 8] Password empty after ControlSetText — trying ControlFocus + Send")
+    ControlFocus($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $passwordInstance & "]")
     Sleep(200)
-    ; Select all existing text and delete
     Send("^a")
-    Sleep(100)
+    Sleep(50)
     Send("{DELETE}")
-    Sleep(100)
-    ; Type the password
-    Send($svcPassword, 1)  ; flag=1 sends raw characters (no special key interpretation)
+    Sleep(50)
+    Send($svcPassword, 1)
     Sleep(500)
-
-    ; Verify again
-    Local $verifyPw2 = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:4]")
-    _Log("[Screen 8] Password read-back after Send: '" & $verifyPw2 & "' (length=" & StringLen($verifyPw2) & ")")
-
-    If StringLen($verifyPw2) = 0 Then
-        _Log("[Screen 8] WARNING: Password still empty — trying ControlSend")
-        ControlFocus($mainWindow, "", "[CLASS:Edit; INSTANCE:4]")
-        Sleep(200)
-        ControlSend($mainWindow, "", "[CLASS:Edit; INSTANCE:4]", $svcPassword, 1)
-        Sleep(500)
-        Local $verifyPw3 = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:4]")
-        _Log("[Screen 8] Password read-back after ControlSend: '" & $verifyPw3 & "' (length=" & StringLen($verifyPw3) & ")")
-    EndIf
+    $verifyPw = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $passwordInstance & "]")
+    _Log("[Screen 8] Password after Send: '" & $verifyPw & "' (length=" & StringLen($verifyPw) & ")")
 EndIf
 
-; --- Final verification of all fields ---
-Local $finalDomain = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:2]")
-Local $finalUser = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:3]")
-Local $finalPw = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:4]")
+; If still empty, try ControlSend
+If StringLen($verifyPw) = 0 Then
+    _Log("[Screen 8] Password still empty — trying ControlSend")
+    ControlSend($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $passwordInstance & "]", $svcPassword, 1)
+    Sleep(500)
+    $verifyPw = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $passwordInstance & "]")
+    _Log("[Screen 8] Password after ControlSend: '" & $verifyPw & "' (length=" & StringLen($verifyPw) & ")")
+EndIf
+
+; --- Final verification ---
+Local $finalDomain = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $domainInstance & "]")
+Local $finalUser = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $usernameInstance & "]")
+Local $finalPw = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $passwordInstance & "]")
 _Log("[Screen 8] FINAL VERIFY — Domain='" & $finalDomain & "' Username='" & $finalUser & "' Password='" & $finalPw & "' (pw length=" & StringLen($finalPw) & ")")
 
 _ClickNext()
@@ -552,13 +662,25 @@ _HandlePopup($popupAuthError, "Yes", $popupWait)
 ; =========================================================================
 _HandleScreen("Screen 9: Default Currency", "Default Currency")
 
-; Select currency from dropdown
-_Log("Selecting default currency: " & $defaultCurrency)
-Local $currencyResult = ControlCommand($mainWindow, "Default Currency", "[CLASS:ComboBox; INSTANCE:1]", "SelectString", $defaultCurrency)
+; Dump controls for diagnostics
+_Log("Dumping controls on Screen 9 for diagnostics...")
+_DumpControls()
+
+; The currency ComboBox is NOT at INSTANCE:1 — that's the SQL Server platform
+; combo from Screen 5. Find the last ComboBox which is Screen 9's currency.
+Local $maxCombo = 0
+For $i = 1 To 10
+    ControlGetText($mainWindow, "", "[CLASS:ComboBox; INSTANCE:" & $i & "]")
+    If @error Then ExitLoop
+    $maxCombo = $i
+Next
+_Log("[Screen 9] Total ComboBox controls: " & $maxCombo & " — currency is at INSTANCE:" & $maxCombo)
+
+_Log("[Screen 9] Selecting default currency: " & $defaultCurrency)
+Local $currencyResult = ControlCommand($mainWindow, "", "[CLASS:ComboBox; INSTANCE:" & $maxCombo & "]", "SelectString", $defaultCurrency)
 If $currencyResult = 0 Then
     _Log("WARNING: SelectString failed for currency, trying alternate approach")
-    ; Try clicking the combo box and sending the text
-    ControlClick($mainWindow, "Default Currency", "[CLASS:ComboBox; INSTANCE:1]")
+    ControlClick($mainWindow, "", "[CLASS:ComboBox; INSTANCE:" & $maxCombo & "]")
     Sleep(500)
     Send($defaultCurrency)
     Sleep(500)
