@@ -33,7 +33,7 @@ postilion_db_log_path: "D:\\Program Files\\Microsoft SQL Server\\MSSQL15.MSSQLSE
 postilion_svc_hostname: "{{ ansible_hostname }}"
 postilion_svc_domain: "{{ ansible_hostname }}"
 postilion_svc_username: "Administrator"
-postilion_svc_password: "MyP@ssw0rd!"
+postilion_svc_password: "Password@123"
 
 # Application
 postilion_default_currency: "Naira (566)"

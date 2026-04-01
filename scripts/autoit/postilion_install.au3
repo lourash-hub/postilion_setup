@@ -28,7 +28,7 @@ Local $dbLogPath = "D:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MS
 Local $svcHostname = @ComputerName
 Local $svcDomain = @ComputerName
 Local $svcUsername = "Administrator"
-Local $svcPassword = "MyP@ssw0rd!"
+Local $svcPassword = "Password@123"
 Local $defaultCurrency = "Naira (566)"
 Local $licensePath = "C:\Postilion\realtime\license\postilion.lic"
 

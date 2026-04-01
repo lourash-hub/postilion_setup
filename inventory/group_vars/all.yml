@@ -9,8 +9,8 @@ autoit_log_file: "C:\\logs\\postilion_autoit_install.log"
 
 # Default credentials (no vault — plaintext for now)
 ansible_user: "Administrator"
-ansible_password: "MyP@ssw0rd!"
-postilion_svc_password: "MyP@ssw0rd!"
+ansible_password: "Password@123"
+postilion_svc_password: "Password@123"
 postilion_db_password: ""
 
 # Temporary working directory on targets

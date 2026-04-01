@@ -31,3 +31,11 @@ This repository automates the deployment of ACI Postilion Realtime Framework v5.
 - `ansible_` prefix for connection/system variables
 
 ## Refer to docs/COPILOT_INSTRUCTIONS.md for the complete GUI screen flow and coding standards.
+
+
+Ansible host is 172.26.42.122
+ansible user is : Administrator
+ansible password is : Password@123
+postilion_svc_username: Administrator
+postilion_svc_password: Password@123
+ansible_port: 5985
