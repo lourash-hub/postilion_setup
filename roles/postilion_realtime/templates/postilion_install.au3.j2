@@ -486,14 +486,15 @@ _DumpControls()
 Local $editCountS6 = _CountEdits()
 _Log("[Screen 6] Total Edit controls: " & $editCountS6)
 
-; Screen 6 adds 5 Edit fields for database file configuration:
-;   DB Name, Data Device, Data File Path, Log Device, Log File Path
-; These are the LAST 5 Edit controls on this screen.
-Local $dbNameInst6 = $editCountS6 - 4
-Local $dataDevInst = $editCountS6 - 3
-Local $dataPathInst = $editCountS6 - 2
-Local $logDevInst = $editCountS6 - 1
-Local $logPathInst = $editCountS6
+; CRITICAL: The LAST Edit control on every screen is a read-only description
+; text (e.g. "Provide the details of the Realtime Framework database.").
+; The actual 5 data fields are BEFORE that description Edit.
+; So fields are at maxEdit-5 through maxEdit-1 (NOT maxEdit-4 through maxEdit).
+Local $dbNameInst6 = $editCountS6 - 5
+Local $dataDevInst = $editCountS6 - 4
+Local $dataPathInst = $editCountS6 - 3
+Local $logDevInst = $editCountS6 - 2
+Local $logPathInst = $editCountS6 - 1
 
 _Log("[Screen 6] Calculated field instances: DBName=" & $dbNameInst6 & " DataDev=" & $dataDevInst & " DataPath=" & $dataPathInst & " LogDev=" & $logDevInst & " LogPath=" & $logPathInst)
 
@@ -539,16 +540,18 @@ _HandleScreen("Screen 7: Services Server", "Services Server")
 _Log("Dumping controls on Screen 7 for diagnostics...")
 _DumpControls()
 
-; Count total Edit controls — Screen 7 adds 1 Edit for hostname (the last one)
+; Count total Edit controls — the LAST Edit is a description text,
+; so the hostname field is at maxEdit - 1 (second to last).
 Local $editCountS7 = _CountEdits()
-_Log("[Screen 7] Total Edit controls: " & $editCountS7 & " — hostname is at INSTANCE:" & $editCountS7)
+Local $hostnameInst = $editCountS7 - 1
+_Log("[Screen 7] Total Edit controls: " & $editCountS7 & " — hostname is at INSTANCE:" & $hostnameInst)
 
-_Log("[Screen 7] Setting Services Server hostname (INSTANCE:" & $editCountS7 & "): " & $svcHostname)
-ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $editCountS7 & "]", $svcHostname)
+_Log("[Screen 7] Setting Services Server hostname (INSTANCE:" & $hostnameInst & "): " & $svcHostname)
+ControlSetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $hostnameInst & "]", $svcHostname)
 Sleep(500)
 
 ; Verify write
-Local $verifyHost = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $editCountS7 & "]")
+Local $verifyHost = ControlGetText($mainWindow, "", "[CLASS:Edit; INSTANCE:" & $hostnameInst & "]")
 _Log("[Screen 7] Hostname verify: '" & $verifyHost & "'")
 
 _ClickNext()
@@ -579,11 +582,11 @@ Sleep(500)
 Local $maxEdit = _CountEdits()
 _Log("[Screen 8] Total Edit controls found: " & $maxEdit)
 
-; Screen 8 adds 3 fields (Domain, Username, Password) at the end
-; So they should be at maxEdit-2, maxEdit-1, maxEdit
-Local $domainInstance = $maxEdit - 2
-Local $usernameInstance = $maxEdit - 1
-Local $passwordInstance = $maxEdit
+; Screen 8 adds 3 fields (Domain, Username, Password) before the
+; description text Edit. So they are at maxEdit-3, maxEdit-2, maxEdit-1.
+Local $domainInstance = $maxEdit - 3
+Local $usernameInstance = $maxEdit - 2
+Local $passwordInstance = $maxEdit - 1
 
 _Log("[Screen 8] Calculated field instances: Domain=" & $domainInstance & " Username=" & $usernameInstance & " Password=" & $passwordInstance)
 
