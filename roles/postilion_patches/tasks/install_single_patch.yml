@@ -143,7 +143,7 @@
   tags:
     - patch
 
-# --- Step 3: Generate AutoIt script for this patch ---
+# --- Step 3: Generate config INI for this patch ---
 - name: "{{ patch_item.filename }} — Remove previous AutoIt patch log"
   ansible.windows.win_file:
     path: "{{ patch_log_file }}"
@@ -152,10 +152,10 @@
   tags:
     - patch
 
-- name: "{{ patch_item.filename }} — Generate AutoIt patch script"
+- name: "{{ patch_item.filename }} — Generate patch config INI"
   ansible.windows.win_template:
-    src: postilion_patch.au3.j2
-    dest: "{{ temp_dir }}\\postilion_patch.au3"
+    src: patch_config.ini.j2
+    dest: "{{ temp_dir }}\\patch_config.ini"
   when: not (patch_already_installed | bool)
   tags:
     - patch
@@ -258,7 +258,7 @@
     path: "{{ item }}"
     state: absent
   loop:
-    - "{{ temp_dir }}\\postilion_patch.au3"
+    - "{{ temp_dir }}\\patch_config.ini"
     - "{{ temp_dir }}\\patch_launcher.ps1"
     - "{{ temp_dir }}\\patch_autoit_exitcode.txt"
   when:

@@ -97,29 +97,11 @@
   tags:
     - patch
 
-# --- Check AutoIt3 interpreter availability ---
-- name: Check if AutoIt3.exe interpreter is available
-  ansible.builtin.stat:
-    path: "{{ role_path }}/../postilion_realtime/files/AutoIt3.exe"
-  delegate_to: localhost
-  register: autoit_interpreter_check
-  when: patch_files.matched | default(0) > 0
-  tags:
-    - patch
-
-- name: Copy AutoIt3 interpreter to target
+# --- Copy compiled AutoIt patch script to target ---
+- name: Copy compiled postilion_patch.exe to target
   ansible.windows.win_copy:
-    src: "{{ role_path }}/../postilion_realtime/files/AutoIt3.exe"
-    dest: "{{ temp_dir }}\\AutoIt3.exe"
-  when:
-    - patch_files.matched | default(0) > 0
-    - autoit_interpreter_check.stat.exists | default(false)
-  tags:
-    - patch
-
-- name: Set AutoIt execution method fact
-  ansible.builtin.set_fact:
-    patch_autoit_use_interpreter: "{{ autoit_interpreter_check.stat.exists | default(false) }}"
+    src: postilion_patch.exe
+    dest: "{{ temp_dir }}\\postilion_patch.exe"
   when: patch_files.matched | default(0) > 0
   tags:
     - patch
@@ -212,9 +194,9 @@
     - patch
 
 # --- Cleanup ---
-- name: Clean up AutoIt3 interpreter
+- name: Clean up compiled AutoIt patch script
   ansible.windows.win_file:
-    path: "{{ temp_dir }}\\AutoIt3.exe"
+    path: "{{ temp_dir }}\\postilion_patch.exe"
     state: absent
   when: postilion_patch_cleanup | default(true)
   tags:

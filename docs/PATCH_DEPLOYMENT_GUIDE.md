@@ -20,21 +20,36 @@ The patch automation installs Postilion Realtime Framework patches using AutoIt 
 
 1. **Postilion Realtime Framework v5.6** must be installed first (run the main installer playbook)
 2. **WinRM** enabled and accessible from the control node
-3. **AutoIt3.exe** interpreter — must be placed at:
+3. **Patch files** placed in `D:\Patches` (or custom path) on the target server
+4. **Interactive RDP session** — a user must be logged into the desktop (the automation runs GUI automation via scheduled task in the interactive session)
+
+### Compiling the AutoIt Patch Script (One-Time Setup)
+
+The patch automation uses the same pattern as the main installer — a **pre-compiled AutoIt `.exe`** that is copied from the control node to the target at runtime. AutoIt does **not** need to be installed on the target server.
+
+You need a Windows machine with AutoIt v3 installed to compile. This only needs to be done **once** (or when you modify `scripts/autoit/postilion_patch.au3`).
+
+**Steps:**
+
+1. Install AutoIt v3 on any Windows machine (your dev workstation, not the target server):
+   https://www.autoitscript.com/site/autoit/downloads/
+
+2. Compile the patch script:
+   ```powershell
+   cd scripts\autoit
+   .\compile_autoit.ps1 -Au3Source postilion_patch.au3 -OutputExe postilion_patch.exe
    ```
-   roles/postilion_realtime/files/AutoIt3.exe
+
+3. Copy the compiled `.exe` into the role's files directory:
+   ```powershell
+   Copy-Item postilion_patch.exe ..\..\roles\postilion_patches\files\
    ```
-   The patch role shares the AutoIt interpreter with the main install role. Ansible copies it to `C:\temp\AutoIt3.exe` on the target during execution.
-4. **Patch files** placed in `D:\Patches` (or custom path) on the target server
-5. **Interactive RDP session** — a user must be logged into the desktop (the automation runs GUI automation via scheduled task in the interactive session)
 
-### Do I Need to Recompile AutoIt?
+4. Commit `roles/postilion_patches/files/postilion_patch.exe` to the repo.
 
-**No.** The patch automation uses the AutoIt3.exe **interpreter** with a `.au3` script (not a compiled `.exe`). The `.au3` script is generated dynamically from the Jinja2 template (`postilion_patch.au3.j2`) by Ansible's `win_template` module at runtime. This means:
+**When do I need to recompile?**
 
-- No compilation step needed
-- Variables (patch name, paths, timeouts) are injected at deployment time
-- Changes to the `.au3.j2` template take effect immediately on next run
+Only if you change the AutoIt GUI automation logic in `scripts/autoit/postilion_patch.au3`. Per-patch variables (patch name, log file, timeouts) are read from a config INI file at runtime, so adding new patches does **not** require recompilation.
 
 ## Patch File Setup
 
@@ -101,11 +116,25 @@ ansible-playbook playbooks/05_patch_realtime.yml
 | 0 | **Idempotency check** | Looks for `*Patch_NNN*` directory in `C:\Postilion\realtime` |
 | 1 | **Extract** | Runs the patch `.exe` with `/auto` flag (WinZip self-extractor) |
 | 2 | **Find setup.exe** | Locates `setup*.exe` in the extracted directory |
-| 3 | **Generate AutoIt script** | Renders `postilion_patch.au3.j2` template with patch-specific variables |
-| 4 | **Create launcher** | Renders `patch_launcher.ps1.j2` (starts setup.exe, waits for window, launches AutoIt) |
+| 3 | **Generate config INI** | Writes per-patch config (name, log path, timeouts) to `C:\temp\patch_config.ini` |
+| 4 | **Create launcher** | Renders `patch_launcher.ps1.j2` (starts setup.exe, waits for window, launches AutoIt `.exe`) |
 | 5 | **Scheduled task** | Creates and runs `PostilionPatch` task with `LogonType Interactive` |
 | 6 | **Wait** | Polls scheduled task state every 10 seconds until completion or timeout |
-| 7 | **Cleanup** | Removes temp scripts, scheduled task, and exit code marker |
+| 7 | **Cleanup** | Removes temp scripts, config INI, scheduled task, and exit code marker |
+
+### How It Works — Compiled .exe + INI Config
+
+Unlike the main installer (which uses a Jinja2 template `.au3` with baked-in variables), the patch automation uses a **compiled `.exe`** that reads its configuration from an **INI file** at runtime:
+
+```
+postilion_patch.exe "C:\temp\patch_config.ini"
+```
+
+This means:
+- The `.exe` is compiled **once** and stored in the repo
+- Per-patch variables are written to `patch_config.ini` by Ansible before each patch
+- No AutoIt interpreter needed on the target server (the runtime is bundled in the `.exe`)
+- No recompilation needed when adding new patches
 
 ### GUI Flow (Automated by AutoIt)
 
@@ -150,7 +179,7 @@ C:\logs\patch_autoit_RealtimeFramework_v5.6_patchNNN_buildXXXXXX.log
 | 1 | Timeout waiting for a screen |
 | 2 | Unexpected error |
 | 3 | Control not found |
-| 99 | Fatal error / AutoIt did not run |
+| 99 | Fatal error / postilion_patch.exe not found |
 
 ### Common Issues
 
@@ -163,10 +192,9 @@ C:\logs\patch_autoit_RealtimeFramework_v5.6_patchNNN_buildXXXXXX.log
 - Check `C:\Postilion\realtime` for directories matching `*Patch_NNN*`
 - The idempotency check uses the patch number extracted from the filename
 
-**3. "AutoIt3.exe interpreter not available"**
-- Place `AutoIt3.exe` in `roles/postilion_realtime/files/AutoIt3.exe`
-- Download AutoIt v3 from https://www.autoitscript.com/site/autoit/downloads/
-- Only the interpreter (`AutoIt3.exe`) is needed, not the full installer
+**3. "postilion_patch.exe not found"**
+- Compile the AutoIt script and place it at `roles/postilion_patches/files/postilion_patch.exe`
+- See the "Compiling the AutoIt Patch Script" section above
 
 **4. ansible.cfg ignored (WSL)**
 - Always set `export ANSIBLE_CONFIG=./ansible.cfg` before running playbooks from WSL
@@ -177,11 +205,19 @@ C:\logs\patch_autoit_RealtimeFramework_v5.6_patchNNN_buildXXXXXX.log
 ```
 roles/postilion_patches/
 ├── defaults/main.yml                          # Default variables
+├── files/
+│   ├── README.md                              # Compilation instructions
+│   └── postilion_patch.exe                    # Compiled AutoIt script (you must compile this)
 ├── tasks/
 │   ├── main.yml                               # Entry point (imports patch.yml)
 │   ├── patch.yml                              # Orchestrator (discover, loop, services)
-│   └── install_single_patch.yml               # Per-patch logic (extract, AutoIt, scheduled task)
+│   └── install_single_patch.yml               # Per-patch logic (extract, scheduled task, wait)
 └── templates/
-    ├── postilion_patch.au3.j2                 # AutoIt GUI automation script
+    ├── patch_config.ini.j2                    # Per-patch config INI (read by the .exe at runtime)
     └── patch_launcher.ps1.j2                  # PowerShell launcher for interactive session
+
+scripts/autoit/
+├── postilion_patch.au3                        # AutoIt source (compile this → postilion_patch.exe)
+├── compile_autoit.ps1                         # Compilation helper script
+└── postilion_install.au3                      # Main installer AutoIt source (separate)
 ```
