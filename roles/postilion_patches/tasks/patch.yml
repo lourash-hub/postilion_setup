@@ -1,10 +1,13 @@
 ---
 # =============================================================================
 # Postilion Realtime Patch Installation
-# Installs patches in ascending order (oldest first) using PatchInstaller
-# with a response file for silent/automated patching.
+# Installs patches in ascending order (oldest first) using AutoIt GUI automation
+# with the same Session 0 workaround as the main installer.
 #
-# Supports both .exe patch files and .zip archives that need extraction.
+# Flow per patch:
+#   1. Extract patch .exe (WinZip self-extractor) → folder with setup.exe
+#   2. Launch setup.exe + AutoIt via scheduled task (interactive session)
+#   3. AutoIt clicks through: Welcome → Ready to Install → Wait → Finish
 # =============================================================================
 
 # --- Validate prerequisites ---
@@ -54,48 +57,12 @@
   tags:
     - patch
 
-# --- Extract any .zip patch archives first ---
-- name: Find zip archives in patches directory
-  ansible.windows.win_find:
-    paths: "{{ postilion_patches_dir }}"
-    patterns: "RealtimeFramework_v5.6_patch*.zip"
-    file_type: file
-  register: patch_zips
-  tags:
-    - patch
-
-- name: Extract zip patch archives
-  ansible.windows.win_shell: |
-    $zipFile = $env:ZIP_FILE
-    $extractDir = $env:EXTRACT_DIR
-    Write-Output "Extracting: $zipFile -> $extractDir"
-    Expand-Archive -Path $zipFile -DestinationPath $extractDir -Force
-    Write-Output "Extracted: $zipFile"
-  environment:
-    ZIP_FILE: "{{ item.path }}"
-    EXTRACT_DIR: "{{ postilion_patches_dir }}"
-  loop: "{{ patch_zips.files | sort(attribute='filename') }}"
-  loop_control:
-    label: "{{ item.filename }}"
-  when: patch_zips.matched | default(0) > 0
-  register: zip_extract_results
-  tags:
-    - patch
-
-- name: Display zip extraction results
-  ansible.builtin.debug:
-    msg: "Extracted {{ patch_zips.matched | default(0) }} zip archive(s)"
-  when: patch_zips.matched | default(0) > 0
-  tags:
-    - patch
-
-# --- Discover patch .exe files (after extraction) ---
+# --- Discover patch .exe files ---
 - name: Find all patch executables in patches directory
   ansible.windows.win_find:
     paths: "{{ postilion_patches_dir }}"
     patterns: "RealtimeFramework_v5.6_patch*.exe"
     file_type: file
-    recurse: true
   register: patch_files
   tags:
     - patch
@@ -105,6 +72,7 @@
     msg: |
       Found {{ patch_files.matched | default(0) }} patch(es):
       {{ patch_files.files | sort(attribute='filename') | map(attribute='filename') | list | to_nice_yaml }}
+  when: patch_files.matched | default(0) > 0
   tags:
     - patch
 
@@ -115,51 +83,43 @@
   tags:
     - patch
 
-# --- Locate the PatchInstaller ---
-- name: Find PatchInstaller executable
-  ansible.windows.win_find:
-    paths: "{{ postilion_install_dir }}\\realtime"
-    patterns: "PatchInstaller*.exe"
-    recurse: true
-    file_type: file
-  register: patch_installer_search
+# --- Close Event Viewer to prevent popup during patching ---
+- name: Close Event Viewer (mmc.exe) if open
+  ansible.windows.win_shell: |
+    $mmc = Get-Process mmc -ErrorAction SilentlyContinue
+    if ($mmc) {
+        $mmc | Stop-Process -Force
+        Write-Output "Event Viewer (mmc.exe) closed"
+    } else {
+        Write-Output "Event Viewer not running"
+    }
   when: patch_files.matched | default(0) > 0
   tags:
     - patch
 
-- name: Set PatchInstaller path
+# --- Check AutoIt3 interpreter availability ---
+- name: Check if AutoIt3.exe interpreter is available
+  ansible.builtin.stat:
+    path: "{{ role_path }}/../postilion_realtime/files/AutoIt3.exe"
+  delegate_to: localhost
+  register: autoit_interpreter_check
+  when: patch_files.matched | default(0) > 0
+  tags:
+    - patch
+
+- name: Copy AutoIt3 interpreter to target
+  ansible.windows.win_copy:
+    src: "{{ role_path }}/../postilion_realtime/files/AutoIt3.exe"
+    dest: "{{ temp_dir }}\\AutoIt3.exe"
+  when:
+    - patch_files.matched | default(0) > 0
+    - autoit_interpreter_check.stat.exists | default(false)
+  tags:
+    - patch
+
+- name: Set AutoIt execution method fact
   ansible.builtin.set_fact:
-    postilion_patch_installer_exe: "{{ patch_installer_search.files[0].path }}"
-  when:
-    - patch_files.matched | default(0) > 0
-    - patch_installer_search.files is defined
-    - patch_installer_search.files | length > 0
-  tags:
-    - patch
-
-- name: Fail if PatchInstaller not found
-  ansible.builtin.fail:
-    msg: >-
-      PatchInstaller executable not found under {{ postilion_install_dir }}\realtime.
-      Ensure Postilion Realtime is properly installed.
-  when:
-    - patch_files.matched | default(0) > 0
-    - patch_installer_search.files | default([]) | length == 0
-  tags:
-    - patch
-
-- name: Display PatchInstaller location
-  ansible.builtin.debug:
-    msg: "PatchInstaller: {{ postilion_patch_installer_exe }}"
-  when: postilion_patch_installer_exe is defined
-  tags:
-    - patch
-
-# --- Generate response file ---
-- name: Generate patch installer response file
-  ansible.windows.win_template:
-    src: response_file_patchinstaller.xml.j2
-    dest: "{{ temp_dir }}\\response_file_patchinstaller.xml"
+    patch_autoit_use_interpreter: "{{ autoit_interpreter_check.stat.exists | default(false) }}"
   when: patch_files.matched | default(0) > 0
   tags:
     - patch
@@ -189,39 +149,23 @@
 - name: Display service stop result
   ansible.builtin.debug:
     msg: "{{ stop_services_result.stdout_lines | default(['No output']) }}"
-  when: stop_services_result is changed or stop_services_result is defined
-  tags:
-    - patch
-
-# --- Deploy patch installer script ---
-- name: Deploy patch installer script
-  ansible.windows.win_template:
-    src: install_patch.ps1.j2
-    dest: "{{ temp_dir }}\\install_patch.ps1"
   when:
-    - patch_files.matched | default(0) > 0
-    - postilion_patch_installer_exe is defined
+    - stop_services_result is defined
+    - stop_services_result is changed
   tags:
     - patch
 
-# --- Install patches in ascending order ---
+# =============================================================================
+# PATCH INSTALLATION LOOP
+# Process each patch in ascending order (oldest first)
+# =============================================================================
 - name: Install patches in ascending order
-  ansible.windows.win_shell: >-
-    powershell.exe -ExecutionPolicy Bypass
-    -File "{{ temp_dir }}\\install_patch.ps1"
-    -PatchPath "{{ item.path }}"
-    -PatchInstaller "{{ postilion_patch_installer_exe }}"
-    -ResponseFile "{{ temp_dir }}\\response_file_patchinstaller.xml"
-    -LogDir "{{ log_dir }}"
-    -TempDir "{{ temp_dir }}"
+  ansible.builtin.include_tasks: install_single_patch.yml
   loop: "{{ patch_files.files | sort(attribute='filename') }}"
   loop_control:
     label: "{{ item.filename }}"
-  register: patch_results
-  timeout: "{{ postilion_patch_timeout }}"
-  when:
-    - patch_files.matched | default(0) > 0
-    - postilion_patch_installer_exe is defined
+    loop_var: patch_item
+  when: patch_files.matched | default(0) > 0
   tags:
     - patch
 
@@ -232,7 +176,7 @@
       Patch installation complete.
       Total patches processed: {{ patch_files.matched | default(0) }}.
       Check individual patch logs in {{ log_dir }} for details.
-  when: patch_results is defined
+  when: patch_files.matched | default(0) > 0
   tags:
     - patch
 
@@ -261,19 +205,17 @@
 - name: Display service start result
   ansible.builtin.debug:
     msg: "{{ start_services_result.stdout_lines | default(['No output']) }}"
-  when: start_services_result is changed or start_services_result is defined
+  when:
+    - start_services_result is defined
+    - start_services_result is changed
   tags:
     - patch
 
 # --- Cleanup ---
-- name: Remove temporary response files
+- name: Clean up AutoIt3 interpreter
   ansible.windows.win_file:
-    path: "{{ item }}"
+    path: "{{ temp_dir }}\\AutoIt3.exe"
     state: absent
-  loop:
-    - "{{ temp_dir }}\\response_file_patchinstaller.xml"
-    - "{{ temp_dir }}\\response_patch_current.xml"
-    - "{{ temp_dir }}\\install_patch.ps1"
   when: postilion_patch_cleanup | default(true)
   tags:
     - patch

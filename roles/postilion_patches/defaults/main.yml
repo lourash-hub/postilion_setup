@@ -9,12 +9,13 @@ postilion_patches_dir: "D:\\Patches"
 # Postilion install directory (must match the install role)
 postilion_install_dir: "C:\\Postilion"
 
-# Response file settings
-postilion_patches_use_filter: "false"
-postilion_patches_preview: "false"
+# Timeout for each patch installation (seconds)
+postilion_patch_timeout: 900
 
-# Timeout for patch installer (seconds) — patches can take a while
-postilion_patch_timeout: 1800
+# AutoIt GUI automation timeouts
+postilion_patch_screen_wait: 2000
+postilion_patch_popup_wait: 3
+postilion_patch_progress_timeout: 600
 
 # Temp and log directories
 temp_dir: "C:\\temp"

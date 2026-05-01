@@ -3,12 +3,12 @@
 # 05_patch_realtime.yml — Install Postilion Realtime Patches
 # =============================================================================
 # Applies patches from D:\Patches in ascending order (oldest first).
+# Uses AutoIt GUI automation with Session 0 workaround (scheduled task).
 # Completely independent from the base installation playbook.
 #
 # Usage:
 #   ansible-playbook playbooks/05_patch_realtime.yml
 #   ansible-playbook playbooks/05_patch_realtime.yml -e postilion_patches_dir=D:\OtherPatches
-#   ansible-playbook playbooks/05_patch_realtime.yml -e postilion_patches_preview=true
 # =============================================================================
 
 - name: Apply Postilion Realtime Framework Patches
@@ -27,7 +27,6 @@
           Patches dir:      {{ postilion_patches_dir }}
           Install dir:      {{ postilion_install_dir }}
           Manage services:  {{ postilion_patch_manage_services | default(true) }}
-          Preview only:     {{ postilion_patches_preview | default('false') }}
           ====================================================
       tags: always
 
