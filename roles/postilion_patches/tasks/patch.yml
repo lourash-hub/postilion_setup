@@ -66,11 +66,14 @@
 
 - name: Extract zip patch archives
   ansible.windows.win_shell: |
-    $zipFile = '{{ item.path }}'
-    $extractDir = '{{ postilion_patches_dir }}'
+    $zipFile = $env:ZIP_FILE
+    $extractDir = $env:EXTRACT_DIR
     Write-Output "Extracting: $zipFile -> $extractDir"
     Expand-Archive -Path $zipFile -DestinationPath $extractDir -Force
     Write-Output "Extracted: $zipFile"
+  environment:
+    ZIP_FILE: "{{ item.path }}"
+    EXTRACT_DIR: "{{ postilion_patches_dir }}"
   loop: "{{ patch_zips.files | sort(attribute='filename') }}"
   loop_control:
     label: "{{ item.filename }}"
@@ -190,53 +193,27 @@
   tags:
     - patch
 
+# --- Deploy patch installer script ---
+- name: Deploy patch installer script
+  ansible.windows.win_template:
+    src: install_patch.ps1.j2
+    dest: "{{ temp_dir }}\\install_patch.ps1"
+  when:
+    - patch_files.matched | default(0) > 0
+    - postilion_patch_installer_exe is defined
+  tags:
+    - patch
+
 # --- Install patches in ascending order ---
 - name: Install patches in ascending order
-  ansible.windows.win_shell: |
-    $patchInstaller = '{{ postilion_patch_installer_exe }}'
-    $responseFile = '{{ temp_dir }}\response_file_patchinstaller.xml'
-    $patchFullPath = '{{ item.path }}'
-    $patchName = Split-Path $patchFullPath -Leaf
-    $patchDir = Split-Path $patchFullPath -Parent
-    $patchBaseName = $patchName -replace '\.exe$', ''
-    $logFile = '{{ log_dir }}\patch_' + $patchBaseName + '.log'
-    $errorLogFile = '{{ log_dir }}\patch_error_' + $patchBaseName + '.log'
-
-    Write-Output "=============================================="
-    Write-Output "Installing patch: $patchName"
-    Write-Output "Patch directory:  $patchDir"
-    Write-Output "Log file:         $logFile"
-    Write-Output "=============================================="
-
-    # Update the response file to point to this patch's directory
-    $responseContent = Get-Content $responseFile -Raw
-    $updatedResponse = $responseContent -replace 'value="[^"]*"(\s*/>)', "value=`"$patchDir`"`$1"
-
-    # Write a per-patch response file
-    $perPatchResponse = '{{ temp_dir }}\response_patch_current.xml'
-    Set-Content -Path $perPatchResponse -Value $updatedResponse
-
-    # Run PatchInstaller
-    $process = Start-Process -FilePath $patchInstaller `
-        -ArgumentList "-response", $perPatchResponse `
-        -Wait -PassThru -NoNewWindow `
-        -RedirectStandardOutput $logFile `
-        -RedirectStandardError $errorLogFile
-
-    Write-Output "Exit code: $($process.ExitCode)"
-
-    if (Test-Path $logFile) {
-        Write-Output "--- Log tail ---"
-        Get-Content $logFile -Tail 15
-        Write-Output "--- End log ---"
-    }
-
-    if ($process.ExitCode -ne 0) {
-        Write-Error "Patch $patchName failed with exit code: $($process.ExitCode)"
-        exit $process.ExitCode
-    }
-
-    Write-Output "Patch $patchName installed successfully."
+  ansible.windows.win_shell: >-
+    powershell.exe -ExecutionPolicy Bypass
+    -File "{{ temp_dir }}\\install_patch.ps1"
+    -PatchPath "{{ item.path }}"
+    -PatchInstaller "{{ postilion_patch_installer_exe }}"
+    -ResponseFile "{{ temp_dir }}\\response_file_patchinstaller.xml"
+    -LogDir "{{ log_dir }}"
+    -TempDir "{{ temp_dir }}"
   loop: "{{ patch_files.files | sort(attribute='filename') }}"
   loop_control:
     label: "{{ item.filename }}"
@@ -296,6 +273,7 @@
   loop:
     - "{{ temp_dir }}\\response_file_patchinstaller.xml"
     - "{{ temp_dir }}\\response_patch_current.xml"
+    - "{{ temp_dir }}\\install_patch.ps1"
   when: postilion_patch_cleanup | default(true)
   tags:
     - patch
