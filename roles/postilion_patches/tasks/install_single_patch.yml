@@ -88,16 +88,44 @@
   tags:
     - patch
 
-- name: "{{ patch_item.filename }} — Wait for extraction to complete"
+- name: "{{ patch_item.filename }} — List directories after extraction"
   ansible.windows.win_find:
     paths: "{{ postilion_patches_dir }}"
-    patterns: "{{ patch_current_basename }}*"
+    patterns: "*patch*"
+    file_type: directory
+  register: patch_dirs_debug
+  when: not (patch_already_installed | bool)
+  tags:
+    - patch
+
+- name: "{{ patch_item.filename }} — Debug: show extracted directories"
+  ansible.builtin.debug:
+    msg: "Directories found: {{ patch_dirs_debug.files | map(attribute='path') | list }}"
+  when: not (patch_already_installed | bool)
+  tags:
+    - patch
+
+- name: "{{ patch_item.filename }} — Find extracted patch directory"
+  ansible.windows.win_find:
+    paths: "{{ postilion_patches_dir }}"
+    patterns: "*patch{{ patch_number }}*"
     file_type: directory
   register: patch_extracted_dir
   until: patch_extracted_dir.matched > 0
   retries: 30
   delay: 10
   when: not (patch_already_installed | bool)
+  tags:
+    - patch
+
+- name: "{{ patch_item.filename }} — Fail if extracted directory not found"
+  ansible.builtin.fail:
+    msg: >-
+      Could not find extracted directory for patch {{ patch_number }} in {{ postilion_patches_dir }}.
+      Directories found: {{ patch_dirs_debug.files | map(attribute='path') | list | default([]) }}
+  when:
+    - not (patch_already_installed | bool)
+    - patch_extracted_dir.matched == 0
   tags:
     - patch
 
