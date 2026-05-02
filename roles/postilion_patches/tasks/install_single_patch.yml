@@ -67,11 +67,16 @@
     - patch
 
 # --- Step 1: Extract the patch (WinZip self-extractor) ---
+# The self-extractor creates a nested path under the patches dir:
+#   D:\Patches\Postilion\Realtime\RealtimeFramework_v5.6_patchNNN_buildXXXXXX\
+# So we search recursively for the directory and setup.exe.
+
 - name: "{{ patch_item.filename }} — Check if patch is already extracted"
   ansible.windows.win_find:
     paths: "{{ postilion_patches_dir }}"
-    patterns: "{{ patch_current_basename }}*"
+    patterns: "*patch{{ patch_number }}*"
     file_type: directory
+    recurse: true
   register: patch_extract_check
   when: not (patch_already_installed | bool)
   tags:
@@ -88,44 +93,17 @@
   tags:
     - patch
 
-- name: "{{ patch_item.filename }} — List directories after extraction"
-  ansible.windows.win_find:
-    paths: "{{ postilion_patches_dir }}"
-    patterns: "*patch*"
-    file_type: directory
-  register: patch_dirs_debug
-  when: not (patch_already_installed | bool)
-  tags:
-    - patch
-
-- name: "{{ patch_item.filename }} — Debug: show extracted directories"
-  ansible.builtin.debug:
-    msg: "Directories found: {{ patch_dirs_debug.files | map(attribute='path') | list }}"
-  when: not (patch_already_installed | bool)
-  tags:
-    - patch
-
-- name: "{{ patch_item.filename }} — Find extracted patch directory"
+- name: "{{ patch_item.filename }} — Wait for extraction to complete"
   ansible.windows.win_find:
     paths: "{{ postilion_patches_dir }}"
     patterns: "*patch{{ patch_number }}*"
     file_type: directory
+    recurse: true
   register: patch_extracted_dir
   until: patch_extracted_dir.matched > 0
   retries: 30
   delay: 10
   when: not (patch_already_installed | bool)
-  tags:
-    - patch
-
-- name: "{{ patch_item.filename }} — Fail if extracted directory not found"
-  ansible.builtin.fail:
-    msg: >-
-      Could not find extracted directory for patch {{ patch_number }} in {{ postilion_patches_dir }}.
-      Directories found: {{ patch_dirs_debug.files | map(attribute='path') | list | default([]) }}
-  when:
-    - not (patch_already_installed | bool)
-    - patch_extracted_dir.matched == 0
   tags:
     - patch
 
@@ -136,13 +114,19 @@
   tags:
     - patch
 
-# --- Step 2: Find setup.exe in extracted directory ---
+- name: "{{ patch_item.filename }} — Display extracted path"
+  ansible.builtin.debug:
+    msg: "Extracted to: {{ patch_extracted_path }}"
+  when: not (patch_already_installed | bool)
+  tags:
+    - patch
+
+# --- Step 2: Find setup.exe (not setupc.exe) in extracted directory ---
 - name: "{{ patch_item.filename }} — Find setup.exe"
   ansible.windows.win_find:
     paths: "{{ patch_extracted_path }}"
-    patterns: "setup*.exe"
+    patterns: "setup.exe"
     file_type: file
-    recurse: true
   register: patch_setup_search
   when: not (patch_already_installed | bool)
   tags:
