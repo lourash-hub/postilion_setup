@@ -145,7 +145,7 @@
   ansible.builtin.include_tasks: install_single_patch.yml
   loop: "{{ patch_files.files | sort(attribute='filename') }}"
   loop_control:
-    label: "{{ item.filename }}"
+    label: "{{ patch_item.filename }}"
     loop_var: patch_item
   when: patch_files.matched | default(0) > 0
   tags:
